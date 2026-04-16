@@ -10,6 +10,12 @@ down:
 build:
 	docker compose build
 
+setup: build up
+	sleep 3
+	docker compose exec backend python manage.py makemigrations users tracking
+	docker compose exec backend python manage.py migrate
+	@echo "✅ Orbi7rack prêt sur http://localhost:8000"
+
 restart:
 	docker compose restart backend
 
@@ -37,6 +43,7 @@ test-cov:
 	docker compose exec backend pytest --cov=apps --cov-report=term-missing
 
 # ── Utilitaires ───────────────────────────────────────────
+
 seed:
 	bash scripts/seed.sh
 
