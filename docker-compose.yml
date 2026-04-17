@@ -37,6 +37,7 @@ services:
 
   celery:
     build: ./backend
+    user: "1000:1000"
     command: celery -A config worker -l info
     volumes:
       - ./backend:/app
@@ -50,6 +51,7 @@ services:
 
   celery-beat:
     build: ./backend
+    user: "1000:1000"
     command: celery -A config beat -l info
     volumes:
       - ./backend:/app
