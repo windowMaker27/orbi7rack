@@ -1,16 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useState, useRef } from "react";
 import AuthGate from "@/components/AuthGate";
 import Sidebar from "@/components/Sidebar";
 import { useParcels } from "@/hooks/useParcels";
-import { useRef } from "react";
 import type { Parcel } from "@/hooks/useParcels";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
 function GlobeWithData() {
-  const { parcels, loading } = useParcels();
+  const { parcels, loading, setParcels } = useParcels();
   const globeRef = useRef<any>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
@@ -25,10 +25,20 @@ function GlobeWithData() {
     }
   };
 
+  const handleParcelAdded = (parcel: Parcel) => {
+    setParcels(prev => [parcel, ...prev]);
+    handleSelectParcel(parcel);
+  };
+
   return (
     <>
       <Globe parcels={parcels} globeRef={globeRef} />
-      <Sidebar parcels={parcels} loading={loading} onSelectParcel={handleSelectParcel} />
+      <Sidebar
+        parcels={parcels}
+        loading={loading}
+        onSelectParcel={handleSelectParcel}
+        onParcelAdded={handleParcelAdded}
+      />
     </>
   );
 }
