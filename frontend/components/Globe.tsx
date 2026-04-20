@@ -19,6 +19,78 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "#888888",
 };
 
+// Centroïdes ISO2 (copie minimale pour le front)
+const ISO2_CENTROIDS: Record<string, [number, number]> = {
+  AF: [33.93, 67.71], AL: [41.15, 20.17], DZ: [28.03, 1.65],
+  AR: [-38.41, -63.61], AT: [47.51, 14.55], AU: [-25.27, 133.77],
+  BE: [50.50, 4.46], BR: [-14.23, -51.92], CA: [56.13, -106.34],
+  CH: [46.81, 8.22], CL: [-35.67, -71.54], CN: [35.86, 104.19],
+  CO: [4.57, -74.29], CZ: [49.81, 15.47], DE: [51.16, 10.45],
+  DK: [56.26, 9.50], EG: [26.82, 30.80], ES: [40.46, -3.74],
+  FI: [61.92, 25.74], FR: [46.22, 2.21], GB: [55.37, -3.43],
+  GR: [39.07, 21.82], HK: [22.39, 114.10], HR: [45.10, 15.20],
+  HU: [47.16, 19.50], ID: [-0.78, 113.92], IN: [20.59, 78.96],
+  IT: [41.87, 12.56], JP: [36.20, 138.25], KR: [35.90, 127.76],
+  MA: [31.79, -7.09], MX: [23.63, -102.55], MY: [4.21, 101.97],
+  NL: [52.13, 5.29], NO: [60.47, 8.46], NZ: [-40.90, 174.88],
+  PH: [12.87, 121.77], PK: [30.37, 69.34], PL: [51.91, 19.14],
+  PT: [39.39, -8.22], RO: [45.94, 24.96], RU: [61.52, 105.31],
+  SA: [23.88, 45.07], SE: [60.12, 18.64], SG: [1.35, 103.81],
+  TH: [15.87, 100.99], TR: [38.96, 35.24], TW: [23.69, 120.96],
+  UA: [48.37, 31.16], US: [37.09, -95.71], VN: [14.05, 108.27],
+  ZA: [-28.47, 24.67],
+};
+
+function getCentroid(code: string): [number, number] | null {
+  return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
+}
+
+// Arcs : uniquement colis non livrés avec origin ET position connue
+function buildArcs(parcels: Parcel[]) {
+  return parcels
+    .filter(p => p.status !== "delivered" && p.status !== "expired")
+    .map(p => {
+      const origin = getCentroid(p.origin_country);
+      const dest = p.estimated_position;
+      if (!origin || !dest) return null;
+      return {
+        startLat: origin[0],
+        startLng: origin[1],
+        endLat: dest.lat,
+        endLng: dest.lng,
+        color: STATUS_COLORS[p.status] ?? "#ffffff",
+        label: p.tracking_number,
+        status: p.status,
+      };
+    })
+    .filter(Boolean);
+}
+
+// Points d'icône avion : position interpolée sur l'arc
+function buildPlanes(parcels: Parcel[]) {
+  return parcels
+    .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
+    .map(p => {
+      const origin = getCentroid(p.origin_country);
+      const dest = p.estimated_position;
+      if (!origin || !dest) return null;
+
+      // Interpolation 0.5 fixe (milieu de l'arc) — sera animée côté requestAnimationFrame
+      const t = 0.5;
+      const lat = origin[0] + (dest.lat - origin[0]) * t;
+      const lng = origin[1] + (dest.lng - origin[1]) * t;
+
+      return {
+        lat,
+        lng,
+        color: STATUS_COLORS[p.status] ?? "#fff",
+        label: p.tracking_number,
+        altitude: 0.08,
+      };
+    })
+    .filter(Boolean);
+}
+
 function buildPoints(parcels: Parcel[]) {
   return parcels
     .map(parcel => {
@@ -39,7 +111,12 @@ function buildPoints(parcels: Parcel[]) {
     .filter(Boolean);
 }
 
-function applyPoints(globe: any, points: any[]) {
+function applyData(globe: any, parcels: Parcel[]) {
+  const points = buildPoints(parcels);
+  const arcs   = buildArcs(parcels);
+  const planes = buildPlanes(parcels);
+
+  // Points de destination
   globe
     .pointsData(points)
     .pointLat((d: any) => d.lat)
@@ -49,33 +126,57 @@ function applyPoints(globe: any, points: any[]) {
     .pointRadius((d: any) => d.radius)
     .pointLabel((d: any) => `
       <div style="
-        background: rgba(10,0,0,0.85);
-        border: 1px solid rgba(255,68,0,0.4);
-        border-radius: 8px;
-        padding: 10px 14px;
-        font-family: monospace;
-        font-size: 12px;
-        color: #fff;
-        min-width: 180px;
+        background:rgba(10,0,0,0.85);
+        border:1px solid rgba(255,68,0,0.4);
+        border-radius:8px;
+        padding:10px 14px;
+        font-family:monospace;
+        font-size:12px;
+        color:#fff;
+        min-width:180px;
       ">
         <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
         <div style="color:${d.color};margin-bottom:4px">● ${d.status}</div>
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
-        <div style="color:#ffffff44;font-size:10px;margin-top:4px">pos: ${d.source}</div>
       </div>
     `);
+
+  // Arcs animés
+  globe
+    .arcsData(arcs)
+    .arcStartLat((d: any) => d.startLat)
+    .arcStartLng((d: any) => d.startLng)
+    .arcEndLat((d: any) => d.endLat)
+    .arcEndLng((d: any) => d.endLng)
+    .arcColor((d: any) => [d.color, `${d.color}22`])
+    .arcAltitude(0.25)
+    .arcStroke(0.5)
+    .arcDashLength(0.4)
+    .arcDashGap(0.2)
+    .arcDashAnimateTime(2500)
+    .arcLabel((d: any) => `<div style="font-family:monospace;font-size:11px;color:${d.color};background:rgba(10,0,0,0.8);padding:6px 10px;border-radius:6px">${d.label}</div>`);
+
+  // Icônes avion (rings pulsants)
+  globe
+    .ringsData(planes)
+    .ringLat((d: any) => d.lat)
+    .ringLng((d: any) => d.lng)
+    .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "0")}`)
+    .ringMaxRadius(3)
+    .ringPropagationSpeed(2)
+    .ringRepeatPeriod(800);
 }
 
 export default function Globe({ parcels, globeRef }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<EffectComposer | null>(null);
-  const frameRef = useRef<number>(0);
-  const pendingParcelsRef = useRef<Parcel[]>(parcels);
+  const composerRef  = useRef<EffectComposer | null>(null);
+  const frameRef     = useRef<number>(0);
+  const pendingRef   = useRef<Parcel[]>(parcels);
 
   useEffect(() => {
-    pendingParcelsRef.current = parcels;
+    pendingRef.current = parcels;
     if (!globeRef.current) return;
-    applyPoints(globeRef.current, buildPoints(parcels));
+    applyData(globeRef.current, parcels);
   }, [parcels, globeRef]);
 
   useEffect(() => {
@@ -87,8 +188,9 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
 
-      const GlobeConstructor = GlobeGL as any;
-      const globe = GlobeConstructor({ animateIn: true, rendererConfig: { antialias: true, alpha: true } })(containerRef.current)
+      const globe = (GlobeGL as any)(
+        { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
+      )(containerRef.current)
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
@@ -111,13 +213,10 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
           return colors[Math.floor(Math.random() * colors.length)];
         })
         .hexPolygonAltitude(0.01)
+        // Init vide, rempli après
         .pointsData([])
-        .pointLat((d: any) => d.lat)
-        .pointLng((d: any) => d.lng)
-        .pointColor((d: any) => d.color)
-        .pointAltitude((d: any) => d.altitude)
-        .pointRadius((d: any) => d.radius)
-        .pointLabel(() => "");
+        .arcsData([])
+        .ringsData([]);
 
       const scene = globe.scene();
       scene.add(new THREE.AmbientLight(0xff4400, 0.4));
@@ -125,7 +224,7 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
       dirLight.position.set(1, 1, 1);
       scene.add(dirLight);
 
-      globe.controls().autoRotate = true;
+      globe.controls().autoRotate      = true;
       globe.controls().autoRotateSpeed = 0.6;
 
       setTimeout(() => {
@@ -141,18 +240,16 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
       }, 500);
 
       globeRef.current = globe;
-
-      // Applique les colis déjà chargés pendant l'init
-      applyPoints(globe, buildPoints(pendingParcelsRef.current));
+      applyData(globe, pendingRef.current);
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
-      const camera = globe.camera() as THREE.Camera;
+      const camera   = globe.camera() as THREE.Camera;
 
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(
         new EffectPass(
-          camera as THREE.Camera,
+          camera,
           new BloomEffect({
             intensity: 1.8,
             luminanceThreshold: 0.1,
