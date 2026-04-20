@@ -11,6 +11,12 @@ export interface TrackingEvent {
   description: string;
 }
 
+export interface EstimatedPosition {
+  lat: number;
+  lng: number;
+  source: "dest_country" | "last_event" | "origin_country";
+}
+
 export interface Parcel {
   id: number;
   tracking_number: string;
@@ -23,6 +29,7 @@ export interface Parcel {
   created_at: string;
   updated_at: string;
   events: TrackingEvent[];
+  estimated_position: EstimatedPosition | null;
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -45,7 +52,6 @@ export function useParcels() {
         return res.json();
       })
       .then(data => {
-        // L'API DRF retourne soit un tableau soit { results: [...] } si pagination
         setParcels(Array.isArray(data) ? data : data.results ?? []);
       })
       .catch(err => setError(err.message))

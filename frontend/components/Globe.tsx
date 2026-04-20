@@ -22,14 +22,15 @@ const STATUS_COLORS: Record<string, string> = {
 function buildPoints(parcels: Parcel[]) {
   return parcels
     .map(parcel => {
-      const event = parcel.events.find(
-        e => e.latitude !== null && e.longitude !== null
-      );
-      if (!event) return null;
+      const pos = parcel.estimated_position;
+      if (!pos) return null;
       return {
-        lat: event.latitude as number,
-        lng: event.longitude as number,
-        label: `${parcel.tracking_number} — ${parcel.status}`,
+        lat: pos.lat,
+        lng: pos.lng,
+        source: pos.source,
+        label: parcel.tracking_number,
+        status: parcel.status,
+        description: parcel.description,
         color: STATUS_COLORS[parcel.status] ?? "#ffffff",
         altitude: 0.02,
         radius: 0.4,
@@ -46,20 +47,34 @@ function applyPoints(globe: any, points: any[]) {
     .pointColor((d: any) => d.color)
     .pointAltitude((d: any) => d.altitude)
     .pointRadius((d: any) => d.radius)
-    .pointLabel((d: any) => d.label);
+    .pointLabel((d: any) => `
+      <div style="
+        background: rgba(10,0,0,0.85);
+        border: 1px solid rgba(255,68,0,0.4);
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-family: monospace;
+        font-size: 12px;
+        color: #fff;
+        min-width: 180px;
+      ">
+        <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
+        <div style="color:${d.color};margin-bottom:4px">● ${d.status}</div>
+        ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
+        <div style="color:#ffffff44;font-size:10px;margin-top:4px">pos: ${d.source}</div>
+      </div>
+    `);
 }
 
 export default function Globe({ parcels, globeRef }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<EffectComposer | null>(null);
   const frameRef = useRef<number>(0);
-  // Stocke les derniers parcels pour les appliquer après init si le globe n'est pas prêt
   const pendingParcelsRef = useRef<Parcel[]>(parcels);
 
-  // Mise à jour des points quand les colis changent
   useEffect(() => {
     pendingParcelsRef.current = parcels;
-    if (!globeRef.current) return; // sera appliqué à la fin de init()
+    if (!globeRef.current) return;
     applyPoints(globeRef.current, buildPoints(parcels));
   }, [parcels, globeRef]);
 
@@ -102,7 +117,7 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
         .pointColor((d: any) => d.color)
         .pointAltitude((d: any) => d.altitude)
         .pointRadius((d: any) => d.radius)
-        .pointLabel((d: any) => d.label);
+        .pointLabel(() => "");
 
       const scene = globe.scene();
       scene.add(new THREE.AmbientLight(0xff4400, 0.4));
@@ -127,7 +142,7 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
 
       globeRef.current = globe;
 
-      // Applique les colis déjà chargés pendant l'init du globe
+      // Applique les colis déjà chargés pendant l'init
       applyPoints(globe, buildPoints(pendingParcelsRef.current));
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
