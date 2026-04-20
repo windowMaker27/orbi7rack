@@ -39,7 +39,7 @@ services:
     build: ./frontend
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend_nm:/app/node_modules
     ports:
       - "3000:3000"
     environment:
@@ -77,3 +77,4 @@ services:
 
 volumes:
   pgdata:
+  frontend_nm:
