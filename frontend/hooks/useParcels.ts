@@ -52,5 +52,5 @@ export function useParcels() {
       .finally(() => setLoading(false));
   }, [access]);
 
-  return { parcels, loading, error };
+  return { parcels, setParcels, loading, error };
 }
