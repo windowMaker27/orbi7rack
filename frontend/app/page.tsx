@@ -2,13 +2,35 @@
 
 import dynamic from "next/dynamic";
 import AuthGate from "@/components/AuthGate";
+import Sidebar from "@/components/Sidebar";
 import { useParcels } from "@/hooks/useParcels";
+import { useRef } from "react";
+import type { Parcel } from "@/hooks/useParcels";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
 function GlobeWithData() {
-  const { parcels } = useParcels();
-  return <Globe parcels={parcels} />;
+  const { parcels, loading } = useParcels();
+  const globeRef = useRef<any>(null);
+
+  const handleSelectParcel = (parcel: Parcel) => {
+    const event = parcel.events.find(
+      e => e.latitude !== null && e.longitude !== null
+    );
+    if (event && globeRef.current) {
+      globeRef.current.pointOfView(
+        { lat: event.latitude, lng: event.longitude, altitude: 1.5 },
+        800
+      );
+    }
+  };
+
+  return (
+    <>
+      <Globe parcels={parcels} globeRef={globeRef} />
+      <Sidebar parcels={parcels} loading={loading} onSelectParcel={handleSelectParcel} />
+    </>
+  );
 }
 
 export default function Home() {

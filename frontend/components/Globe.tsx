@@ -7,9 +7,9 @@ import type { Parcel } from "@/hooks/useParcels";
 
 interface GlobeProps {
   parcels: Parcel[];
+  globeRef: React.MutableRefObject<any>;
 }
 
-// Couleur par statut
 const STATUS_COLORS: Record<string, string> = {
   pending: "#ffaa00",
   in_transit: "#00cfff",
@@ -19,17 +19,14 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "#888888",
 };
 
-export default function Globe({ parcels }: GlobeProps) {
+export default function Globe({ parcels, globeRef }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const globeRef = useRef<any>(null);
   const composerRef = useRef<EffectComposer | null>(null);
   const frameRef = useRef<number>(0);
 
   // Mise à jour des points quand les colis changent
   useEffect(() => {
     if (!globeRef.current) return;
-
-    // On prend le dernier event avec lat/lng pour chaque colis
     const points = parcels
       .map(parcel => {
         const event = parcel.events.find(
@@ -55,7 +52,7 @@ export default function Globe({ parcels }: GlobeProps) {
       .pointAltitude((d: any) => d.altitude)
       .pointRadius((d: any) => d.radius)
       .pointLabel((d: any) => d.label);
-  }, [parcels]);
+  }, [parcels, globeRef]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -90,7 +87,6 @@ export default function Globe({ parcels }: GlobeProps) {
           return colors[Math.floor(Math.random() * colors.length)];
         })
         .hexPolygonAltitude(0.01)
-        // Points vides au départ, remplis par le 2e useEffect
         .pointsData([])
         .pointLat((d: any) => d.lat)
         .pointLng((d: any) => d.lng)
@@ -167,7 +163,7 @@ export default function Globe({ parcels }: GlobeProps) {
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(frameRef.current);
     };
-  }, []);
+  }, [globeRef]);
 
   return (
     <div
