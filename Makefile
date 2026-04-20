@@ -14,7 +14,7 @@ setup: build up
 	sleep 3
 	docker compose exec backend python manage.py makemigrations users tracking
 	docker compose exec backend python manage.py migrate
-	@echo "✅ Orbi7rack prêt sur http://localhost:8000"
+	@echo "✅ Orbi7rack prêt sur http://localhost:3000"
 
 restart:
 	docker compose restart backend
