@@ -40,7 +40,8 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
       onClick={onClose}
       style={{
         position: "fixed", inset: 0, zIndex: 200,
-        display: "flex", alignItems: "center", justifyContent: "center",
+        display: "flex", alignItems: "center", justifyContent: "flex-end",
+        paddingRight: 80,
         pointerEvents: "auto",
       }}
     >
@@ -52,27 +53,30 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
           WebkitBackdropFilter: "blur(20px)",
           border: "1px solid rgba(255,68,0,0.25)",
           borderRadius: 12,
-          padding: 28,
-          width: 400,
-          maxHeight: "80vh",
+          padding: 20,
+          width: 320,
+          maxHeight: "70vh",
           overflowY: "auto",
+          scrollbarWidth: "none",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          gap: 12,
         }}
       >
+        <style>{`.parcel-modal::-webkit-scrollbar { display: none; }`}</style>
+
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{
             color: "#ff6600", fontFamily: "monospace",
-            fontSize: 13, letterSpacing: 3,
+            fontSize: 11, letterSpacing: 3,
             textTransform: "uppercase", margin: 0,
           }}>
             Détail colis
           </h2>
           <button onClick={onClose} style={{
             background: "none", border: "none", color: "#ff440088",
-            cursor: "pointer", fontSize: 18, lineHeight: 1,
+            cursor: "pointer", fontSize: 16, lineHeight: 1,
           }}>✕</button>
         </div>
 
@@ -80,18 +84,18 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
         <div style={{
           background: "rgba(255,68,0,0.07)",
           border: "1px solid rgba(255,68,0,0.15)",
-          borderRadius: 8, padding: "12px 16px",
+          borderRadius: 8, padding: "10px 14px",
         }}>
-          <div style={{ color: "#ff440066", fontFamily: "monospace", fontSize: 10, letterSpacing: 2, marginBottom: 4 }}>
+          <div style={{ color: "#ff440066", fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>
             N° DE SUIVI
           </div>
-          <div style={{ color: "#fff", fontFamily: "monospace", fontSize: 14, fontWeight: "bold", wordBreak: "break-all" }}>
+          <div style={{ color: "#fff", fontFamily: "monospace", fontSize: 12, fontWeight: "bold", wordBreak: "break-all" }}>
             {parcel.tracking_number}
           </div>
         </div>
 
         {/* Infos */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {[
             { label: "STATUT", value: STATUS_LABELS[parcel.status] ?? parcel.status, color: statusColor },
             { label: "DESCRIPTION", value: parcel.description || "—", color: "#fff" },
@@ -101,12 +105,12 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
             <div key={label} style={{
               background: "rgba(255,255,255,0.03)",
               border: "1px solid rgba(255,68,0,0.1)",
-              borderRadius: 6, padding: "10px 12px",
+              borderRadius: 6, padding: "8px 10px",
             }}>
-              <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>
+              <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 3 }}>
                 {label}
               </div>
-              <div style={{ color, fontFamily: "monospace", fontSize: 12, fontWeight: "bold" }}>
+              <div style={{ color, fontFamily: "monospace", fontSize: 11, fontWeight: "bold" }}>
                 {value}
               </div>
             </div>
@@ -118,15 +122,15 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
           <div style={{
             background: "rgba(255,68,0,0.05)",
             border: "1px solid rgba(255,68,0,0.12)",
-            borderRadius: 8, padding: "10px 14px",
+            borderRadius: 8, padding: "8px 12px",
           }}>
-            <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 6 }}>
+            <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 4 }}>
               POSITION
             </div>
             <div style={{ color: "#ff6600", fontFamily: "monospace", fontSize: 11 }}>
               {pos.lat.toFixed(4)}, {pos.lng.toFixed(4)}
             </div>
-            <div style={{ color: "#ffffff44", fontFamily: "monospace", fontSize: 10, marginTop: 4 }}>
+            <div style={{ color: "#ffffff44", fontFamily: "monospace", fontSize: 9, marginTop: 3 }}>
               {SOURCE_LABELS[pos.source] ?? pos.source}
             </div>
           </div>
@@ -135,39 +139,36 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
         {/* Historique events */}
         {parcel.events.length > 0 && (
           <div>
-            <div style={{ color: "#ff440066", fontFamily: "monospace", fontSize: 10, letterSpacing: 2, marginBottom: 10 }}>
+            <div style={{ color: "#ff440066", fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 8 }}>
               HISTORIQUE ({parcel.events.length})
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {parcel.events.map((event, i) => (
-                <div key={event.id} style={{
-                  display: "flex", gap: 12, alignItems: "flex-start",
-                }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4 }}>
+                <div key={event.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 3 }}>
                     <div style={{
-                      width: 8, height: 8, borderRadius: "50%",
+                      width: 6, height: 6, borderRadius: "50%",
                       background: i === 0 ? statusColor : "#ff440033",
                       flexShrink: 0,
-                      boxShadow: i === 0 ? `0 0 6px ${statusColor}` : "none",
+                      boxShadow: i === 0 ? `0 0 5px ${statusColor}` : "none",
                     }} />
                     {i < parcel.events.length - 1 && (
-                      <div style={{ width: 1, flex: 1, minHeight: 16, background: "rgba(255,68,0,0.12)", margin: "3px 0" }} />
+                      <div style={{ width: 1, flex: 1, minHeight: 12, background: "rgba(255,68,0,0.12)", margin: "2px 0" }} />
                     )}
                   </div>
-                  <div style={{ flex: 1, paddingBottom: 8 }}>
-                    <div style={{ color: "#ffffff99", fontFamily: "monospace", fontSize: 11, lineHeight: 1.4 }}>
+                  <div style={{ flex: 1, paddingBottom: 6 }}>
+                    <div style={{ color: "#ffffff88", fontFamily: "monospace", fontSize: 10, lineHeight: 1.4 }}>
                       {event.description || event.status}
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
                       {event.location && (
-                        <span style={{ color: "#ff660066", fontFamily: "monospace", fontSize: 10 }}>
+                        <span style={{ color: "#ff660066", fontFamily: "monospace", fontSize: 9 }}>
                           📍 {event.location}
                         </span>
                       )}
-                      <span style={{ color: "#ffffff33", fontFamily: "monospace", fontSize: 10 }}>
+                      <span style={{ color: "#ffffff33", fontFamily: "monospace", fontSize: 9 }}>
                         {new Date(event.timestamp).toLocaleDateString("fr-FR", {
                           day: "2-digit", month: "short", year: "numeric",
-                          hour: "2-digit", minute: "2-digit",
                         })}
                       </span>
                     </div>
@@ -180,7 +181,7 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
 
         {/* Sync info */}
         {parcel.last_synced_at && (
-          <div style={{ color: "#ffffff22", fontFamily: "monospace", fontSize: 10, textAlign: "right" }}>
+          <div style={{ color: "#ffffff22", fontFamily: "monospace", fontSize: 9, textAlign: "right" }}>
             Sync : {new Date(parcel.last_synced_at).toLocaleString("fr-FR")}
           </div>
         )}
