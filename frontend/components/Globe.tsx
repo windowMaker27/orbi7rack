@@ -3,12 +3,59 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { EffectComposer, EffectPass, RenderPass, BloomEffect } from "postprocessing";
+import type { Parcel } from "@/hooks/useParcels";
 
-export default function Globe() {
+interface GlobeProps {
+  parcels: Parcel[];
+}
+
+// Couleur par statut
+const STATUS_COLORS: Record<string, string> = {
+  pending: "#ffaa00",
+  in_transit: "#00cfff",
+  out_for_delivery: "#00ff99",
+  delivered: "#44ff44",
+  exception: "#ff2222",
+  expired: "#888888",
+};
+
+export default function Globe({ parcels }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<any>(null);
   const composerRef = useRef<EffectComposer | null>(null);
   const frameRef = useRef<number>(0);
+
+  // Mise à jour des points quand les colis changent
+  useEffect(() => {
+    if (!globeRef.current) return;
+
+    // On prend le dernier event avec lat/lng pour chaque colis
+    const points = parcels
+      .map(parcel => {
+        const event = parcel.events.find(
+          e => e.latitude !== null && e.longitude !== null
+        );
+        if (!event) return null;
+        return {
+          lat: event.latitude as number,
+          lng: event.longitude as number,
+          label: `${parcel.tracking_number} — ${parcel.status}`,
+          color: STATUS_COLORS[parcel.status] ?? "#ffffff",
+          altitude: 0.02,
+          radius: 0.4,
+        };
+      })
+      .filter(Boolean);
+
+    globeRef.current
+      .pointsData(points)
+      .pointLat((d: any) => d.lat)
+      .pointLng((d: any) => d.lng)
+      .pointColor((d: any) => d.color)
+      .pointAltitude((d: any) => d.altitude)
+      .pointRadius((d: any) => d.radius)
+      .pointLabel((d: any) => d.label);
+  }, [parcels]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -42,7 +89,15 @@ export default function Globe() {
           const colors = ["#ff4400", "#ff6600", "#ff8800", "#ffaa00", "#ffcc00"];
           return colors[Math.floor(Math.random() * colors.length)];
         })
-        .hexPolygonAltitude(0.01);
+        .hexPolygonAltitude(0.01)
+        // Points vides au départ, remplis par le 2e useEffect
+        .pointsData([])
+        .pointLat((d: any) => d.lat)
+        .pointLng((d: any) => d.lng)
+        .pointColor((d: any) => d.color)
+        .pointAltitude((d: any) => d.altitude)
+        .pointRadius((d: any) => d.radius)
+        .pointLabel((d: any) => d.label);
 
       const scene = globe.scene();
       scene.add(new THREE.AmbientLight(0xff4400, 0.4));
@@ -53,22 +108,20 @@ export default function Globe() {
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
-      // Glow sur les graticules
-        setTimeout(() => {
-          scene.traverse((obj: any) => {
-            if (obj.isLine || obj.isLineSegments) {
-              obj.material = new THREE.LineBasicMaterial({
-                color: new THREE.Color("#ff2200"),
-                transparent: true,
-                opacity: 0.3,
-              });
-            }
-          });
-        }, 500);
+      setTimeout(() => {
+        scene.traverse((obj: any) => {
+          if (obj.isLine || obj.isLineSegments) {
+            obj.material = new THREE.LineBasicMaterial({
+              color: new THREE.Color("#ff2200"),
+              transparent: true,
+              opacity: 0.3,
+            });
+          }
+        });
+      }, 500);
 
       globeRef.current = globe;
 
-      // Post-processing bloom
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera = globe.camera() as THREE.Camera;
 
@@ -87,13 +140,12 @@ export default function Globe() {
       );
       composerRef.current = composer;
 
-      // Boucle de rendu custom
       const animate = () => {
-          frameRef.current = requestAnimationFrame(animate);
-          globe.controls().update();
-          composer.render();
-        };
-        animate();
+        frameRef.current = requestAnimationFrame(animate);
+        globe.controls().update();
+        composer.render();
+      };
+      animate();
     };
 
     init();
