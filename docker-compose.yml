@@ -23,7 +23,9 @@ services:
 
   backend:
     build: ./backend
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >-
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend:/app
     env_file: .env
@@ -59,12 +61,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      backend:
+        condition: service_started
     restart: unless-stopped
 
   celery-beat:
     build: ./backend
     user: "1000:1000"
-    command: celery -A config beat -l info
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - ./backend:/app
     env_file: .env
@@ -72,6 +76,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      backend:
         condition: service_started
     restart: unless-stopped
 
