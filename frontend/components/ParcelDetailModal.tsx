@@ -36,15 +36,19 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
   const pos = parcel.estimated_position;
 
   return (
+    // Backdrop — intercepte les clics sans bloquer la vue
     <div
       onClick={onClose}
       style={{
         position: "fixed", inset: 0, zIndex: 200,
+        // Transparent mais capture les clics
+        background: "transparent",
+        pointerEvents: "auto",
         display: "flex", alignItems: "center", justifyContent: "flex-end",
         paddingRight: 80,
-        pointerEvents: "auto",
       }}
     >
+      {/* Modal — stoppe la propagation */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -63,7 +67,7 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
           gap: 12,
         }}
       >
-        <style>{`.parcel-modal::-webkit-scrollbar { display: none; }`}</style>
+        <style>{`#parcel-modal::-webkit-scrollbar { display: none; }`}</style>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
