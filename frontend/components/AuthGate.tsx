@@ -19,13 +19,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setError("");
     setLoading(true);
     try {
-      if (mode === "login") await login(username, password);
+      if (mode === "login") await login(email, password);
       else await register(username, email, password);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const inputStyle = {
+    padding: 10, borderRadius: 6, border: "1px solid #ff440055",
+    background: "#0d0000", color: "#fff", fontFamily: "monospace",
   };
 
   return (
@@ -54,23 +59,26 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           ))}
         </div>
 
-        <input
-          placeholder="Nom d'utilisateur" value={username}
-          onChange={e => setUsername(e.target.value)}
-          style={{ padding: 10, borderRadius: 6, border: "1px solid #ff440055",
-            background: "#0d0000", color: "#fff", fontFamily: "monospace" }}
-        />
-        <input
-          type="password" placeholder="Mot de passe" value={password}
-          onChange={e => setPassword(e.target.value)}
-          style={{ padding: 10, borderRadius: 6, border: "1px solid #ff440055",
-            background: "#0d0000", color: "#fff", fontFamily: "monospace" }}
-        />
+        {/* Champ username uniquement en inscription */}
+        {mode === "register" && (
+          <input
+            placeholder="Nom d'utilisateur" value={username}
+            onChange={e => setUsername(e.target.value)}
+            style={inputStyle}
+          />
+        )}
+
+        {/* Email toujours visible (login + inscription) */}
         <input
           type="email" placeholder="Email" value={email}
           onChange={e => setEmail(e.target.value)}
-          style={{ padding: 10, borderRadius: 6, border: "1px solid #ff440055",
-            background: "#0d0000", color: "#fff", fontFamily: "monospace" }}
+          style={inputStyle}
+        />
+
+        <input
+          type="password" placeholder="Mot de passe" value={password}
+          onChange={e => setPassword(e.target.value)}
+          style={inputStyle}
         />
 
         {error && <p style={{ color: "#ff4444", fontSize: 13, margin: 0 }}>{error}</p>}
