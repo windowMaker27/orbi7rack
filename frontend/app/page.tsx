@@ -14,12 +14,10 @@ function GlobeWithData() {
   const globeRef = useRef<any>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
-    const event = parcel.events.find(
-      e => e.latitude !== null && e.longitude !== null
-    );
-    if (event && globeRef.current) {
+    const pos = parcel.estimated_position;
+    if (pos && globeRef.current) {
       globeRef.current.pointOfView(
-        { lat: event.latitude, lng: event.longitude, altitude: 1.5 },
+        { lat: pos.lat, lng: pos.lng, altitude: 1.5 },
         800
       );
     }
