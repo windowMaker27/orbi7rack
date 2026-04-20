@@ -44,56 +44,98 @@ function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
 }
 
+// Interpolation sphérique (SLERP) entre deux points lat/lng — t in [0,1]
+function slerpLatLng(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+  t: number
+): [number, number] {
+  const toRad = (d: number) => d * Math.PI / 180;
+  const toDeg = (r: number) => r * 180 / Math.PI;
+
+  const f1 = toRad(lat1); const l1 = toRad(lng1);
+  const f2 = toRad(lat2); const l2 = toRad(lng2);
+
+  const x1 = Math.cos(f1) * Math.cos(l1);
+  const y1 = Math.cos(f1) * Math.sin(l1);
+  const z1 = Math.sin(f1);
+
+  const x2 = Math.cos(f2) * Math.cos(l2);
+  const y2 = Math.cos(f2) * Math.sin(l2);
+  const z2 = Math.sin(f2);
+
+  const dot = Math.min(1, x1*x2 + y1*y2 + z1*z2);
+  const omega = Math.acos(dot);
+
+  if (omega < 1e-10) return [lat1, lng1];
+
+  const s = Math.sin(omega);
+  const a = Math.sin((1 - t) * omega) / s;
+  const b = Math.sin(t * omega) / s;
+
+  const x = a*x1 + b*x2;
+  const y = a*y1 + b*y2;
+  const z = a*z1 + b*z2;
+
+  return [
+    toDeg(Math.atan2(z, Math.sqrt(x*x + y*y))),
+    toDeg(Math.atan2(y, x)),
+  ];
+}
+
+// Texture canvas avec emoji avion ou camion
+function makeIconTexture(emoji: string): THREE.Texture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = `${size * 0.7}px serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, size / 2, size / 2);
+  return new THREE.CanvasTexture(canvas);
+}
+
 function buildArcs(parcels: Parcel[]) {
   return parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
       const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
+      const dest   = p.estimated_position;
       if (!origin || !dest) return null;
       return {
-        startLat: origin[0],
-        startLng: origin[1],
-        endLat: dest.lat,
-        endLng: dest.lng,
+        startLat: origin[0], startLng: origin[1],
+        endLat:   dest.lat,  endLng:   dest.lng,
         color: STATUS_COLORS[p.status] ?? "#ffffff",
         label: p.tracking_number,
-        status: p.status,
       };
     })
     .filter(Boolean);
 }
 
-// Rings sur la vraie estimated_position du colis
 function buildRings(parcels: Parcel[]) {
   return parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
       const pos = p.estimated_position;
       if (!pos) return null;
-      return {
-        lat: pos.lat,
-        lng: pos.lng,
-        color: STATUS_COLORS[p.status] ?? "#ffffff",
-        label: p.tracking_number,
-      };
+      return { lat: pos.lat, lng: pos.lng, color: STATUS_COLORS[p.status] ?? "#fff" };
     })
     .filter(Boolean);
 }
 
 function buildPoints(parcels: Parcel[]) {
   return parcels
-    .map(parcel => {
-      const pos = parcel.estimated_position;
+    .map(p => {
+      const pos = p.estimated_position;
       if (!pos) return null;
       return {
-        lat: pos.lat,
-        lng: pos.lng,
-        source: pos.source,
-        label: parcel.tracking_number,
-        status: parcel.status,
-        description: parcel.description,
-        color: STATUS_COLORS[parcel.status] ?? "#ffffff",
+        lat: pos.lat, lng: pos.lng,
+        label: p.tracking_number,
+        status: p.status,
+        description: p.description,
+        color: STATUS_COLORS[p.status] ?? "#ffffff",
         altitude: 0.02,
         radius: 0.4,
       };
@@ -101,29 +143,57 @@ function buildPoints(parcels: Parcel[]) {
     .filter(Boolean);
 }
 
-function applyData(globe: any, parcels: Parcel[]) {
-  const points = buildPoints(parcels);
-  const arcs   = buildArcs(parcels);
-  const rings  = buildRings(parcels);
+// Calcule les arcs de transport avec leurs métadonnées pour l'animation
+function buildTransportArcs(parcels: Parcel[]) {
+  return parcels
+    .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
+    .map(p => {
+      const origin = getCentroid(p.origin_country);
+      const dest   = p.estimated_position;
+      if (!origin || !dest) return null;
 
+      // Détermine le type de transport selon le statut
+      const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
+
+      // Timestamps pour l'interpolation temporelle
+      const events = (p as any).events ?? [];
+      const sortedGeo = [...events]
+        .filter((e: any) => e.latitude !== null && e.longitude !== null)
+        .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      const firstTs = sortedGeo.length > 0
+        ? new Date(sortedGeo[0].timestamp).getTime()
+        : Date.now() - 86400000;
+      const lastTs = sortedGeo.length > 0
+        ? new Date(sortedGeo[sortedGeo.length - 1].timestamp).getTime()
+        : Date.now();
+
+      // t en [0,1] basé sur le temps réel — en boucle toutes les 20s pour la démo
+      const demoLoopMs = 20000;
+
+      return {
+        id: p.tracking_number,
+        startLat: origin[0], startLng: origin[1],
+        endLat: dest.lat,    endLng: dest.lng,
+        color: STATUS_COLORS[p.status] ?? "#fff",
+        emoji,
+        firstTs, lastTs,
+        demoLoopMs,
+      };
+    })
+    .filter(Boolean);
+}
+
+function applyData(globe: any, parcels: Parcel[]) {
   globe
-    .pointsData(points)
+    .pointsData(buildPoints(parcels))
     .pointLat((d: any) => d.lat)
     .pointLng((d: any) => d.lng)
     .pointColor((d: any) => d.color)
     .pointAltitude((d: any) => d.altitude)
     .pointRadius((d: any) => d.radius)
     .pointLabel((d: any) => `
-      <div style="
-        background:rgba(10,0,0,0.85);
-        border:1px solid rgba(255,68,0,0.4);
-        border-radius:8px;
-        padding:10px 14px;
-        font-family:monospace;
-        font-size:12px;
-        color:#fff;
-        min-width:180px;
-      ">
+      <div style="background:rgba(10,0,0,0.85);border:1px solid rgba(255,68,0,0.4);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#fff;min-width:180px;">
         <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
         <div style="color:${d.color};margin-bottom:4px">● ${d.status}</div>
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
@@ -131,7 +201,7 @@ function applyData(globe: any, parcels: Parcel[]) {
     `);
 
   globe
-    .arcsData(arcs)
+    .arcsData(buildArcs(parcels))
     .arcStartLat((d: any) => d.startLat)
     .arcStartLng((d: any) => d.startLng)
     .arcEndLat((d: any) => d.endLat)
@@ -145,7 +215,7 @@ function applyData(globe: any, parcels: Parcel[]) {
     .arcLabel((d: any) => `<div style="font-family:monospace;font-size:11px;color:${d.color};background:rgba(10,0,0,0.8);padding:6px 10px;border-radius:6px">${d.label}</div>`);
 
   globe
-    .ringsData(rings)
+    .ringsData(buildRings(parcels))
     .ringLat((d: any) => d.lat)
     .ringLng((d: any) => d.lng)
     .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "0")}`)
@@ -154,16 +224,42 @@ function applyData(globe: any, parcels: Parcel[]) {
     .ringRepeatPeriod(800);
 }
 
-export default function Globe({ parcels, globeRef }: GlobeProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const composerRef  = useRef<EffectComposer | null>(null);
-  const frameRef     = useRef<number>(0);
-  const pendingRef   = useRef<Parcel[]>(parcels);
+// Ajoute les sprites THREE.js (avion/camion) dans la scène
+function setupTransportSprites(
+  scene: THREE.Scene,
+  globe: any,
+  transportArcs: NonNullable<ReturnType<typeof buildTransportArcs>>
+): { sprite: THREE.Sprite; arc: (typeof transportArcs)[0] }[] {
+  return transportArcs.map(arc => {
+    const texture  = makeIconTexture(arc!.emoji);
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const sprite   = new THREE.Sprite(material);
+    sprite.scale.set(8, 8, 1);
+    scene.add(sprite);
+    return { sprite, arc };
+  });
+}
 
+export default function Globe({ parcels, globeRef }: GlobeProps) {
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const composerRef     = useRef<EffectComposer | null>(null);
+  const frameRef        = useRef<number>(0);
+  const pendingRef      = useRef<Parcel[]>(parcels);
+  const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
+  const sceneRef        = useRef<THREE.Scene | null>(null);
+
+  // Mise à jour des données quand parcels change
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
     applyData(globeRef.current, parcels);
+
+    // Nettoie les anciens sprites et en recrée de nouveaux
+    if (sceneRef.current) {
+      spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
+      const arcs = buildTransportArcs(parcels);
+      spritesRef.current = setupTransportSprites(sceneRef.current, globeRef.current, arcs as any);
+    }
   }, [parcels, globeRef]);
 
   useEffect(() => {
@@ -196,19 +292,19 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
         .hexPolygonColor(() => {
-          const colors = ["#ff4400", "#ff6600", "#ff8800", "#ffaa00", "#ffcc00"];
-          return colors[Math.floor(Math.random() * colors.length)];
+          const c = ["#ff4400","#ff6600","#ff8800","#ffaa00","#ffcc00"];
+          return c[Math.floor(Math.random() * c.length)];
         })
         .hexPolygonAltitude(0.01)
-        .pointsData([])
-        .arcsData([])
-        .ringsData([]);
+        .pointsData([]).arcsData([]).ringsData([]);
 
-      const scene = globe.scene();
+      const scene = globe.scene() as THREE.Scene;
+      sceneRef.current = scene;
+
       scene.add(new THREE.AmbientLight(0xff4400, 0.4));
-      const dirLight = new THREE.DirectionalLight(0xff8800, 1.2);
-      dirLight.position.set(1, 1, 1);
-      scene.add(dirLight);
+      const dir = new THREE.DirectionalLight(0xff8800, 1.2);
+      dir.position.set(1, 1, 1);
+      scene.add(dir);
 
       globe.controls().autoRotate      = true;
       globe.controls().autoRotateSpeed = 0.6;
@@ -218,8 +314,7 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
           if (obj.isLine || obj.isLineSegments) {
             obj.material = new THREE.LineBasicMaterial({
               color: new THREE.Color("#ff2200"),
-              transparent: true,
-              opacity: 0.3,
+              transparent: true, opacity: 0.3,
             });
           }
         });
@@ -228,27 +323,49 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
       globeRef.current = globe;
       applyData(globe, pendingRef.current);
 
+      // Sprites transport initiaux
+      const transportArcs = buildTransportArcs(pendingRef.current);
+      spritesRef.current  = setupTransportSprites(scene, globe, transportArcs as any);
+
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
+      const GLOBE_RADIUS = 100; // unit THREE.js de globe.gl
 
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
-      composer.addPass(
-        new EffectPass(
-          camera,
-          new BloomEffect({
-            intensity: 1.8,
-            luminanceThreshold: 0.1,
-            luminanceSmoothing: 0.4,
-            mipmapBlur: true,
-          })
-        )
-      );
+      composer.addPass(new EffectPass(camera, new BloomEffect({
+        intensity: 1.8, luminanceThreshold: 0.1,
+        luminanceSmoothing: 0.4, mipmapBlur: true,
+      })));
       composerRef.current = composer;
 
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
         globe.controls().update();
+
+        // Animation des sprites le long de leur arc
+        const now = Date.now();
+        spritesRef.current.forEach(({ sprite, arc }) => {
+          if (!arc) return;
+          // t en boucle [0,1] sur demoLoopMs
+          const t = (now % arc.demoLoopMs) / arc.demoLoopMs;
+          const [lat, lng] = slerpLatLng(
+            arc.startLat, arc.startLng,
+            arc.endLat,   arc.endLng,
+            t
+          );
+          // Altitude courbe : sin(t*PI) * hauteur_arc
+          const alt = Math.sin(t * Math.PI) * 0.3;
+          const phi   = (90 - lat) * Math.PI / 180;
+          const theta = (lng + 180) * Math.PI / 180;
+          const r     = GLOBE_RADIUS * (1 + alt);
+          sprite.position.set(
+            -r * Math.sin(phi) * Math.cos(theta),
+             r * Math.cos(phi),
+             r * Math.sin(phi) * Math.sin(theta)
+          );
+        });
+
         composer.render();
       };
       animate();
@@ -268,7 +385,6 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
       }
     };
     window.addEventListener("resize", handleResize);
-
     return () => {
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(frameRef.current);
@@ -276,9 +392,6 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
   }, [globeRef]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: "100%", height: "100vh", background: "#0a0000" }}
-    />
+    <div ref={containerRef} style={{ width: "100%", height: "100vh", background: "#0a0000" }} />
   );
 }
