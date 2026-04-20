@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useState, useRef } from "react";
 import AuthGate from "@/components/AuthGate";
 import Sidebar from "@/components/Sidebar";
+import ParcelDetailModal from "@/components/ParcelDetailModal";
 import { useParcels } from "@/hooks/useParcels";
 import type { Parcel } from "@/hooks/useParcels";
 
@@ -12,6 +13,7 @@ const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 function GlobeWithData() {
   const { parcels, loading, setParcels } = useParcels();
   const globeRef = useRef<any>(null);
+  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
     const pos = parcel.estimated_position;
@@ -20,6 +22,17 @@ function GlobeWithData() {
         { lat: pos.lat, lng: pos.lng, altitude: 1.5 },
         800
       );
+      // Pause rotation
+      globeRef.current.controls().autoRotate = false;
+    }
+    setSelectedParcel(parcel);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedParcel(null);
+    // Reprend la rotation
+    if (globeRef.current) {
+      globeRef.current.controls().autoRotate = true;
     }
   };
 
@@ -37,6 +50,12 @@ function GlobeWithData() {
         onSelectParcel={handleSelectParcel}
         onParcelAdded={handleParcelAdded}
       />
+      {selectedParcel && (
+        <ParcelDetailModal
+          parcel={selectedParcel}
+          onClose={handleCloseModal}
+        />
+      )}
     </>
   );
 }
