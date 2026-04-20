@@ -19,7 +19,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setError("");
     setLoading(true);
     try {
-      if (mode === "login") await login(email, password);
+      if (mode === "login") await login(username, password);
       else await register(username, email, password);
     } catch (err: any) {
       setError(err.message);
@@ -59,21 +59,21 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           ))}
         </div>
 
-        {/* Champ username uniquement en inscription */}
+        {/* Username — toujours visible */}
+        <input
+          placeholder="Nom d'utilisateur" value={username}
+          onChange={e => setUsername(e.target.value)}
+          style={inputStyle}
+        />
+
+        {/* Email — inscription seulement */}
         {mode === "register" && (
           <input
-            placeholder="Nom d'utilisateur" value={username}
-            onChange={e => setUsername(e.target.value)}
+            type="email" placeholder="Email (optionnel)" value={email}
+            onChange={e => setEmail(e.target.value)}
             style={inputStyle}
           />
         )}
-
-        {/* Email toujours visible (login + inscription) */}
-        <input
-          type="email" placeholder="Email" value={email}
-          onChange={e => setEmail(e.target.value)}
-          style={inputStyle}
-        />
 
         <input
           type="password" placeholder="Mot de passe" value={password}

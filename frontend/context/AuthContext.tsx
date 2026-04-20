@@ -20,16 +20,16 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ access: null, username: null });
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     const res = await fetch(`${API}/api/auth/token/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }), // ← email au lieu de username
+      body: JSON.stringify({ username, password }),
     });
     if (!res.ok) throw new Error("Identifiants incorrects");
     const data = await res.json();
-    setAuth({ access: data.access, username: email });
-}, []);
+    setAuth({ access: data.access, username });
+  }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {
     const res = await fetch(`${API}/api/auth/register/`, {
@@ -38,8 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ username, email, password }),
     });
     if (!res.ok) throw new Error("Erreur lors de l'inscription");
-    await login(email, password); // ← login par EMAIL
-}, [login]);
+    await login(username, password);
+  }, [login]);
 
   const logout = useCallback(() => {
     setAuth({ access: null, username: null });
