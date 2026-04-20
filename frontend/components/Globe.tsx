@@ -19,7 +19,6 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "#888888",
 };
 
-// Centroïdes ISO2 (copie minimale pour le front)
 const ISO2_CENTROIDS: Record<string, [number, number]> = {
   AF: [33.93, 67.71], AL: [41.15, 20.17], DZ: [28.03, 1.65],
   AR: [-38.41, -63.61], AT: [47.51, 14.55], AU: [-25.27, 133.77],
@@ -45,7 +44,6 @@ function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
 }
 
-// Arcs : uniquement colis non livrés avec origin ET position connue
 function buildArcs(parcels: Parcel[]) {
   return parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
@@ -66,26 +64,18 @@ function buildArcs(parcels: Parcel[]) {
     .filter(Boolean);
 }
 
-// Points d'icône avion : position interpolée sur l'arc
-function buildPlanes(parcels: Parcel[]) {
+// Rings sur la vraie estimated_position du colis
+function buildRings(parcels: Parcel[]) {
   return parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
-      if (!origin || !dest) return null;
-
-      // Interpolation 0.5 fixe (milieu de l'arc) — sera animée côté requestAnimationFrame
-      const t = 0.5;
-      const lat = origin[0] + (dest.lat - origin[0]) * t;
-      const lng = origin[1] + (dest.lng - origin[1]) * t;
-
+      const pos = p.estimated_position;
+      if (!pos) return null;
       return {
-        lat,
-        lng,
-        color: STATUS_COLORS[p.status] ?? "#fff",
+        lat: pos.lat,
+        lng: pos.lng,
+        color: STATUS_COLORS[p.status] ?? "#ffffff",
         label: p.tracking_number,
-        altitude: 0.08,
       };
     })
     .filter(Boolean);
@@ -114,9 +104,8 @@ function buildPoints(parcels: Parcel[]) {
 function applyData(globe: any, parcels: Parcel[]) {
   const points = buildPoints(parcels);
   const arcs   = buildArcs(parcels);
-  const planes = buildPlanes(parcels);
+  const rings  = buildRings(parcels);
 
-  // Points de destination
   globe
     .pointsData(points)
     .pointLat((d: any) => d.lat)
@@ -141,7 +130,6 @@ function applyData(globe: any, parcels: Parcel[]) {
       </div>
     `);
 
-  // Arcs animés
   globe
     .arcsData(arcs)
     .arcStartLat((d: any) => d.startLat)
@@ -156,9 +144,8 @@ function applyData(globe: any, parcels: Parcel[]) {
     .arcDashAnimateTime(2500)
     .arcLabel((d: any) => `<div style="font-family:monospace;font-size:11px;color:${d.color};background:rgba(10,0,0,0.8);padding:6px 10px;border-radius:6px">${d.label}</div>`);
 
-  // Icônes avion (rings pulsants)
   globe
-    .ringsData(planes)
+    .ringsData(rings)
     .ringLat((d: any) => d.lat)
     .ringLng((d: any) => d.lng)
     .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "0")}`)
@@ -213,7 +200,6 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
           return colors[Math.floor(Math.random() * colors.length)];
         })
         .hexPolygonAltitude(0.01)
-        // Init vide, rempli après
         .pointsData([])
         .arcsData([])
         .ringsData([]);
