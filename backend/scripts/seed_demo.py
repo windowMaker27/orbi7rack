@@ -1,5 +1,5 @@
 """
-Seed de données de démo — 4 colis sur différents continents
+Seed de données de démo — 4 colis sur différents continents + 1 colis live SQ335
 Crée automatiquement un superuser admin/admin si inexistant.
 Usage : docker compose exec backend python scripts/seed_demo.py
         ou : make seed-demo
@@ -173,13 +173,63 @@ SEED_DATA = [
             },
         ],
     },
+    # --- Colis LIVE lié au vol SQ335 (Paris CDG → Singapore Changi) ---
+    # Boeing 777-312(ER) Singapore Airlines, ~13h de vol
+    {
+        "parcel": {
+            "tracking_number": "DEMO-LIVE-SQ335",
+            "carrier": "Singapore Airlines Cargo",
+            "description": "Composants semiconducteurs [LIVE]",
+            "origin_country": "FR",
+            "dest_country": "SG",
+            "status": "in_transit",
+            "flight_number": "SQ335",
+        },
+        "events": [
+            {
+                "timestamp": dt("2026-04-21T06:00:00"),
+                "location": "Singapore Changi Airport",
+                "latitude": 1.3644,
+                "longitude": 103.9915,
+                "status": "Expected arrival",
+                "description": "Arrivée prévue à l'aéroport de Changi, Singapour",
+            },
+            {
+                "timestamp": dt("2026-04-20T22:10:00"),
+                "location": "Paris Charles de Gaulle",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Departed on flight SQ335",
+                "description": "Départ de Paris CDG sur le vol SQ335 (Boeing 777)",
+            },
+            {
+                "timestamp": dt("2026-04-20T18:00:00"),
+                "location": "Paris CDG - Fret",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Loaded on aircraft",
+                "description": "Chargé en soute sur le Boeing 777-312(ER)",
+            },
+            {
+                "timestamp": dt("2026-04-20T10:00:00"),
+                "location": "Paris CDG - Fret",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Customs cleared",
+                "description": "Dédouanement export validé à Paris",
+            },
+        ],
+    },
 ]
 
 # --- Insertion ---
 for entry in SEED_DATA:
-    parcel = Parcel.objects.create(owner=user, **entry["parcel"])
+    parcel_data = entry["parcel"]
+    parcel = Parcel.objects.create(owner=user, **parcel_data)
     for ev in entry["events"]:
         TrackingEvent.objects.create(parcel=parcel, **ev)
-    print(f"[OK] {parcel.tracking_number} — {parcel.status} ({len(entry['events'])} events)")
+    flight = parcel_data.get("flight_number", "")
+    flight_info = f" ✈️  vol {flight}" if flight else ""
+    print(f"[OK] {parcel.tracking_number} — {parcel.status} ({len(entry['events'])} events){flight_info}")
 
 print(f"\n[DONE] {len(SEED_DATA)} colis de démo créés.")
