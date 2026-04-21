@@ -21,6 +21,8 @@ class Parcel(models.Model):
     last_synced_at  = models.DateTimeField(null=True, blank=True)
     created_at      = models.DateTimeField(auto_now_add=True)
     updated_at      = models.DateTimeField(auto_now=True)
+    flight_number = models.CharField(max_length=20, blank=True, null=True,
+                                  help_text="Ex: AF447, pour liaison FlightRadar")
 
     class Meta:
         ordering = ['-updated_at']

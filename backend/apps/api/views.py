@@ -2,7 +2,9 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
+from apps.tracking.services.flightradar import get_flight_live_position, get_simulated_position
+from django.utils import timezone
+from datetime import timedelta
 from apps.api.serializers import (
     ParcelCreateSerializer,
     ParcelSerializer,
@@ -62,3 +64,36 @@ class ParcelViewSet(
         payload = client.get_track_info(parcel.tracking_number)
         sync_parcel_from_17track(parcel, payload)
         return Response(ParcelSerializer(parcel).data)
+
+    @action(detail=True, methods=["get"])
+    def flight_position(self, request, pk=None):
+        parcel = self.get_object()
+    
+        # Tenter FlightRadar en live
+        if parcel.flight_number:
+            position = get_flight_live_position(parcel.flight_number)
+            if position:
+                return Response(position)
+    
+        # Fallback : interpolation entre les deux derniers événements géocodés
+        events = parcel.events.filter(
+            latitude__isnull=False, longitude__isnull=False
+        ).order_by("timestamp")
+    
+        if events.count() < 2:
+            return Response({"error": "Pas assez d'événements géocodés"}, status=404)
+    
+        first, last = events.first(), events.last()
+        origin = (first.latitude, first.longitude)
+        dest = (last.latitude, last.longitude)
+    
+        # Estimation du progrès basée sur le temps
+
+        total = (last.timestamp - first.timestamp).total_seconds()
+        elapsed = (timezone.now() - first.timestamp).total_seconds()
+        progress = min(elapsed / total, 1.0) if total > 0 else 0.5
+    
+        position = get_simulated_position(origin, dest, progress)
+        position["origin"] = {"lat": origin[0], "lng": origin[1]}
+        position["destination"] = {"lat": dest[0], "lng": dest[1]}
+        return Response(position)
