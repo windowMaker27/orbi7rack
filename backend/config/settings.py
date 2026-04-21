@@ -128,3 +128,7 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # 17TRACK
 SEVENTEENTRACK_API_KEY = config('SEVENTEENTRACK_API_KEY', default='')
+
+# OpenSky Network
+OPENSKY_USER = config('OPENSKY_USER', default='')
+OPENSKY_PASS = config('OPENSKY_PASS', default='')
