@@ -18,67 +18,57 @@ def _auth() -> Optional[tuple]:
 def get_flight_live_position(callsign: str) -> Optional[dict]:
     """
     Cherche un vol par callsign sur OpenSky Network.
-    - Envoie le callsign padded 8 chars (requis par l'API)
-    - Filtre les résultats : retient seulement les avions en croisiere (alt > 5000m)
-    - Log le callsign exact retourné pour faciliter le debug
+    - Match STRICT : le callsign retourné doit commencer par le callsign cherché
+    - Filtre altitude > 5000m (exclut hélicos, petits avions, vols locaux)
     """
     try:
-        # OpenSky attend exactement 8 chars, mais peut retourner plusieurs résultats
-        padded = callsign.upper().ljust(8)
-        auth   = _auth()
-        resp   = httpx.get(
+        target   = callsign.upper().strip()           # ex: "SQ335"
+        padded   = target.ljust(8)                    # ex: "SQ335   "
+        auth     = _auth()
+        resp     = httpx.get(
             f"{OPENSKY_BASE}/states/all",
             params={"callsign": padded},
             auth=auth,
             timeout=10.0,
         )
         resp.raise_for_status()
-        data   = resp.json()
-        states = data.get("states") or []
+        states = (resp.json() or {}).get("states") or []
 
         if not states:
-            logger.info(f"[OpenSky] Aucun état pour callsign={callsign!r}")
+            logger.info(f"[OpenSky] Aucun état pour callsign={target!r}")
             return None
 
-        # Colonnes : [icao24, callsign, origin_country, time_position,
-        #   last_contact, longitude, latitude, baro_altitude, on_ground,
-        #   velocity, true_track, vertical_rate, sensors, geo_altitude,
-        #   squawk, spi, position_source]
         for s in states:
-            raw_callsign = (s[1] or "").strip()
-            on_ground    = s[8]
-            lat          = s[6]
-            lng          = s[5]
-            geo_alt      = s[13]  # m
-            baro_alt     = s[7]   # m
-            alt          = geo_alt if geo_alt is not None else baro_alt
+            raw = (s[1] or "").strip().upper()
 
-            logger.debug(
-                f"[OpenSky] candidate: callsign={raw_callsign!r} "
-                f"lat={lat} lng={lng} alt={alt} on_ground={on_ground}"
-            )
+            # ── Match strict : le callsign retourné doit être exactement le nôtre ──
+            if raw != target:
+                logger.debug(f"[OpenSky] Ignoré (callsign mismatch): {raw!r} != {target!r}")
+                continue
+
+            on_ground = s[8]
+            lat       = s[6]
+            lng       = s[5]
+            geo_alt   = s[13]
+            baro_alt  = s[7]
+            alt       = geo_alt if geo_alt is not None else baro_alt
 
             if on_ground or lat is None or lng is None:
+                logger.info(f"[OpenSky] {raw!r} au sol ou position inconnue")
                 continue
 
-            # Rejeter les avions trop bas (hélicos, petits avions locaux)
             if alt is None or alt < MIN_CRUISE_ALT:
-                logger.info(
-                    f"[OpenSky] Rejeté {raw_callsign!r} : alt={alt}m < {MIN_CRUISE_ALT}m"
-                )
+                logger.info(f"[OpenSky] {raw!r} rejeté : alt={alt}m < {MIN_CRUISE_ALT}m")
                 continue
 
-            logger.info(
-                f"[OpenSky] Match retenu : callsign={raw_callsign!r} "
-                f"lat={lat} lng={lng} alt={alt}m"
-            )
+            logger.info(f"[OpenSky] ✓ Match retenu : {raw!r} lat={lat} lng={lng} alt={alt}m")
             return {
                 "lat":              lat,
                 "lng":              lng,
                 "altitude":         alt,
                 "speed":            s[9],
                 "heading":          s[10],
-                "callsign":         raw_callsign,
+                "callsign":         raw,
                 "origin_iata":      None,
                 "destination_iata": None,
                 "source":           "live",
@@ -86,8 +76,8 @@ def get_flight_live_position(callsign: str) -> Optional[dict]:
             }
 
         logger.info(
-            f"[OpenSky] Aucun avion en croisiere pour callsign={callsign!r} "
-            f"({len(states)} candidat(s) rejete(s))"
+            f"[OpenSky] Aucun match strict pour {target!r} "
+            f"({len(states)} candidat(s) rejeté(s))"
         )
         return None
 
