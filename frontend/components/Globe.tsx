@@ -40,13 +40,13 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
   ZA: [-28.47, 24.67],
 };
 
-const ARC_ALTITUDE = 0.25; // doit correspondre à arcAltitude dans applyData
+const ARC_ALTITUDE = 0.25;
 
 function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
 }
 
-// SLERP sphérique entre deux lat/lng
+// SLERP sphérique lat/lng → [lat, lng] à t
 function slerpLatLng(
   lat1: number, lng1: number,
   lat2: number, lng2: number,
@@ -54,8 +54,8 @@ function slerpLatLng(
 ): [number, number] {
   const toRad = (d: number) => d * Math.PI / 180;
   const toDeg = (r: number) => r * 180 / Math.PI;
-  const f1 = toRad(lat1); const l1 = toRad(lng1);
-  const f2 = toRad(lat2); const l2 = toRad(lng2);
+  const f1 = toRad(lat1), l1 = toRad(lng1);
+  const f2 = toRad(lat2), l2 = toRad(lng2);
   const x1 = Math.cos(f1)*Math.cos(l1), y1 = Math.cos(f1)*Math.sin(l1), z1 = Math.sin(f1);
   const x2 = Math.cos(f2)*Math.cos(l2), y2 = Math.cos(f2)*Math.sin(l2), z2 = Math.sin(f2);
   const dot = Math.min(1, x1*x2 + y1*y2 + z1*z2);
@@ -63,8 +63,10 @@ function slerpLatLng(
   if (omega < 1e-10) return [lat1, lng1];
   const s = Math.sin(omega);
   const a = Math.sin((1-t)*omega)/s, b = Math.sin(t*omega)/s;
-  const x = a*x1+b*x2, y = a*y1+b*y2, z = a*z1+b*z2;
-  return [toDeg(Math.atan2(z, Math.sqrt(x*x+y*y))), toDeg(Math.atan2(y, x))];
+  return [
+    toDeg(Math.atan2(a*z1+b*z2, Math.sqrt((a*x1+b*x2)**2 + (a*y1+b*y2)**2))),
+    toDeg(Math.atan2(a*y1+b*y2, a*x1+b*x2)),
+  ];
 }
 
 function makeIconTexture(emoji: string): THREE.Texture {
@@ -133,14 +135,11 @@ function buildTransportArcs(parcels: Parcel[]) {
         .filter((e: any) => e.latitude !== null && e.longitude !== null)
         .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-      // firstTs = premier event géocodé, lastTs = maintenant (le colis est encore en route)
       const firstTs = sortedGeo.length > 0
         ? new Date(sortedGeo[0].timestamp).getTime()
         : Date.now() - 86400000 * 7;
-      const lastTs = Date.now();
 
-      // t réel = progression depuis le départ jusqu'à maintenant, clampé [0, 1]
-      const tReal = Math.min(1, Math.max(0, (Date.now() - firstTs) / (lastTs - firstTs)));
+      const tReal = Math.min(1, Math.max(0, (Date.now() - firstTs) / (Date.now() - firstTs || 1)));
 
       return {
         id: p.tracking_number,
@@ -148,7 +147,7 @@ function buildTransportArcs(parcels: Parcel[]) {
         endLat: dest.lat, endLng: dest.lng,
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji,
-        tReal, // position fixe basée sur les vrais timestamps
+        tReal,
       };
     }).filter(Boolean);
 }
@@ -195,9 +194,9 @@ function applyData(globe: any, parcels: Parcel[]) {
 
 function setupTransportSprites(
   scene: THREE.Scene,
-  transportArcs: NonNullable<ReturnType<typeof buildTransportArcs>>
-): { sprite: THREE.Sprite; arc: (typeof transportArcs)[number] }[] {
-  return (transportArcs as any[]).map(arc => {
+  transportArcs: any[]
+): { sprite: THREE.Sprite; arc: any }[] {
+  return transportArcs.map(arc => {
     const texture  = makeIconTexture(arc.emoji);
     const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
     const sprite   = new THREE.Sprite(material);
@@ -214,20 +213,14 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
   const pendingRef   = useRef<Parcel[]>(parcels);
   const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef     = useRef<THREE.Scene | null>(null);
-  const globeRadiusRef = useRef<number>(100);
 
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
     applyData(globeRef.current, parcels);
-    // Récupère le vrai rayon globe.gl
-    if (typeof globeRef.current.getGlobeRadius === "function") {
-      globeRadiusRef.current = globeRef.current.getGlobeRadius();
-    }
     if (sceneRef.current) {
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-      const arcs = buildTransportArcs(parcels);
-      spritesRef.current = setupTransportSprites(sceneRef.current, arcs as any);
+      spritesRef.current = setupTransportSprites(sceneRef.current, buildTransportArcs(parcels) as any[]);
     }
   }, [parcels, globeRef]);
 
@@ -285,15 +278,8 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
       }, 500);
 
       globeRef.current = globe;
-
-      // Rayon réel dès que le globe est prêt
-      if (typeof globe.getGlobeRadius === "function") {
-        globeRadiusRef.current = globe.getGlobeRadius();
-      }
-
       applyData(globe, pendingRef.current);
-      const transportArcs = buildTransportArcs(pendingRef.current);
-      spritesRef.current  = setupTransportSprites(scene, transportArcs as any);
+      spritesRef.current = setupTransportSprites(scene, buildTransportArcs(pendingRef.current) as any[]);
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
@@ -310,28 +296,20 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
         frameRef.current = requestAnimationFrame(animate);
         globe.controls().update();
 
-        const R = globeRadiusRef.current;
-
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
-          // t fixe = position estimée réelle (ne bouge plus à chaque frame, OK — le colis ne se déplace pas en temps réel)
-          // Pour un effet visuel de glissement, on anime légèrement autour de tReal
           const t = arc.tReal;
           const [lat, lng] = slerpLatLng(
             arc.startLat, arc.startLng,
             arc.endLat,   arc.endLng,
             t
           );
-          // Altitude identique à arcAltitude de globe.gl : sin(t*PI) * ARC_ALTITUDE
-          const altFraction = Math.sin(t * Math.PI) * ARC_ALTITUDE;
-          const r   = R * (1 + altFraction);
-          const phi   = (90 - lat) * Math.PI / 180;
-          const theta = lng * Math.PI / 180;
-          sprite.position.set(
-             r * Math.sin(phi) * Math.cos(theta),
-             r * Math.cos(phi),
-             r * Math.sin(phi) * Math.sin(theta)
-          );
+          // Altitude courbe identique à l'arc : sin(t*PI) * ARC_ALTITUDE
+          const alt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
+
+          // globe.getCoords() retourne {x,y,z} dans le système de coordonnées THREE.js de globe.gl
+          const coords = globe.getCoords(lat, lng, alt);
+          sprite.position.set(coords.x, coords.y, coords.z);
         });
 
         composer.render();
