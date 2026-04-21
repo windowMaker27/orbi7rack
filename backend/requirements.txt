@@ -20,6 +20,7 @@ geopy==2.4.1
 
 # HTTP
 httpx==0.28.1
+
 # Pillow
 Pillow==11.1.0
 
@@ -31,3 +32,4 @@ faker==33.1.0
 
 # FlightRadar
 FlightRadarAPI==1.4.0
+beautifulsoup4==4.12.3
