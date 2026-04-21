@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { EffectComposer, EffectPass, RenderPass, BloomEffect } from "postprocessing";
 import type { Parcel } from "@/hooks/useParcels";
+import type { FlightPositionMap } from "@/hooks/useFlightPositions";
 
 interface GlobeProps {
   parcels: Parcel[];
   globeRef: React.MutableRefObject<any>;
+  flightPositions?: FlightPositionMap;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -46,7 +48,6 @@ function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
 }
 
-// SLERP sphérique lat/lng → [lat, lng] à t
 function slerpLatLng(
   lat1: number, lng1: number,
   lat2: number, lng2: number,
@@ -121,7 +122,10 @@ function buildPoints(parcels: Parcel[]) {
     }).filter(Boolean);
 }
 
-function buildTransportArcs(parcels: Parcel[]) {
+function buildTransportArcs(
+  parcels: Parcel[],
+  flightPositions: FlightPositionMap = {}
+) {
   return parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -130,6 +134,26 @@ function buildTransportArcs(parcels: Parcel[]) {
       if (!origin || !dest) return null;
 
       const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
+      const live  = flightPositions[p.id];
+
+      // Position live OpenSky disponible → on l'utilise directement
+      if (live && live.source === "live") {
+        return {
+          id: p.id,
+          startLat: origin[0], startLng: origin[1],
+          endLat: dest.lat, endLng: dest.lng,
+          color: STATUS_COLORS[p.status] ?? "#fff",
+          emoji,
+          // Coordonnées réelles du vol
+          liveLat: live.lat,
+          liveLng: live.lng,
+          // Altitude normalisée entre 0 et ARC_ALTITUDE (OpenSky donne des mètres, FL350 ≈ 10 700m)
+          liveAlt: Math.min(ARC_ALTITUDE, ((live.altitude ?? 0) / 12000) * ARC_ALTITUDE),
+          isLive: true,
+        };
+      }
+
+      // Fallback : interpolation temporelle (comportement original)
       const events = (p as any).events ?? [];
       const sortedGeo = [...events]
         .filter((e: any) => e.latitude !== null && e.longitude !== null)
@@ -139,15 +163,18 @@ function buildTransportArcs(parcels: Parcel[]) {
         ? new Date(sortedGeo[0].timestamp).getTime()
         : Date.now() - 86400000 * 7;
 
-      const tReal = Math.min(1, Math.max(0, (Date.now() - firstTs) / (Date.now() - firstTs || 1)));
+      const tReal = live?.progress ?? Math.min(1, Math.max(0,
+        (Date.now() - firstTs) / (Date.now() - firstTs || 1)
+      ));
 
       return {
-        id: p.tracking_number,
+        id: p.id,
         startLat: origin[0], startLng: origin[1],
         endLat: dest.lat, endLng: dest.lng,
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji,
         tReal,
+        isLive: false,
       };
     }).filter(Boolean);
 }
@@ -206,13 +233,20 @@ function setupTransportSprites(
   });
 }
 
-export default function Globe({ parcels, globeRef }: GlobeProps) {
+export default function Globe({ parcels, globeRef, flightPositions = {} }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef  = useRef<EffectComposer | null>(null);
   const frameRef     = useRef<number>(0);
   const pendingRef   = useRef<Parcel[]>(parcels);
   const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef     = useRef<THREE.Scene | null>(null);
+  // Ref pour accéder aux flightPositions dans la boucle d'animation sans re-créer les sprites
+  const flightPosRef = useRef<FlightPositionMap>(flightPositions);
+
+  // Sync flightPositions dans la ref à chaque render
+  useEffect(() => {
+    flightPosRef.current = flightPositions;
+  }, [flightPositions]);
 
   useEffect(() => {
     pendingRef.current = parcels;
@@ -220,7 +254,10 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
     applyData(globeRef.current, parcels);
     if (sceneRef.current) {
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-      spritesRef.current = setupTransportSprites(sceneRef.current, buildTransportArcs(parcels) as any[]);
+      spritesRef.current = setupTransportSprites(
+        sceneRef.current,
+        buildTransportArcs(parcels, flightPosRef.current) as any[]
+      );
     }
   }, [parcels, globeRef]);
 
@@ -279,7 +316,10 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
 
       globeRef.current = globe;
       applyData(globe, pendingRef.current);
-      spritesRef.current = setupTransportSprites(scene, buildTransportArcs(pendingRef.current) as any[]);
+      spritesRef.current = setupTransportSprites(
+        scene,
+        buildTransportArcs(pendingRef.current, flightPosRef.current) as any[]
+      );
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
@@ -298,16 +338,35 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
 
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
-          const t = arc.tReal;
-          const [lat, lng] = slerpLatLng(
-            arc.startLat, arc.startLng,
-            arc.endLat,   arc.endLng,
-            t
-          );
-          // Altitude courbe identique à l'arc : sin(t*PI) * ARC_ALTITUDE
-          const alt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
 
-          // globe.getCoords() retourne {x,y,z} dans le système de coordonnées THREE.js de globe.gl
+          let lat: number;
+          let lng: number;
+          let alt: number;
+
+          if (arc.isLive) {
+            // Position live OpenSky : coordonnées réelles de l'avion
+            const livePos = flightPosRef.current[arc.id];
+            if (livePos && livePos.source === "live") {
+              lat = livePos.lat;
+              lng = livePos.lng;
+              alt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 0) / 12000) * ARC_ALTITUDE);
+            } else {
+              // OpenSky a perdu le signal entre deux polls → fallback SLERP
+              lat = arc.liveLat;
+              lng = arc.liveLng;
+              alt = arc.liveAlt;
+            }
+          } else {
+            // Position simulée par interpolation
+            const t = arc.tReal ?? 0.5;
+            [lat, lng] = slerpLatLng(
+              arc.startLat, arc.startLng,
+              arc.endLat,   arc.endLng,
+              t
+            );
+            alt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
+          }
+
           const coords = globe.getCoords(lat, lng, alt);
           sprite.position.set(coords.x, coords.y, coords.z);
         });
