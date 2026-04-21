@@ -13,26 +13,40 @@ def _get_api() -> FlightRadar24API:
     return _api
 
 
-def get_flight_live_position(flight_iata: str) -> Optional[dict]:
-    """Retourne position live depuis FlightRadar24, None si indisponible."""
+def get_flight_live_position(flight_number: str) -> Optional[dict]:
+    """
+    Retourne position live depuis FlightRadar24, None si indisponible.
+    flight_number : ex. 'SQ335' — on filtre par airline ICAO (3 premiers chars) 
+    puis on matche le callsign.
+    """
     try:
         api = _get_api()
-        flights = api.get_flights(flight_iata=flight_iata)
+        # Extraire le code airline IATA (2 chars) depuis le numéro de vol
+        airline_iata = ''.join(filter(str.isalpha, flight_number)).upper()
+        flights = api.get_flights(airline=airline_iata)
         if not flights:
             return None
-        f = flights[0]
+        # Matcher le callsign exact (ex: SQ335 ou SQ 335)
+        target = flight_number.upper().replace(' ', '')
+        match = next(
+            (f for f in flights if getattr(f, 'callsign', '').upper().replace(' ', '') == target),
+            None
+        )
+        if not match:
+            logger.info(f"Vol {flight_number} non trouvé parmi {len(flights)} vols {airline_iata}")
+            return None
         return {
-            "lat": f.latitude,
-            "lng": f.longitude,
-            "altitude": f.altitude,
-            "speed": f.ground_speed,
-            "heading": f.heading,
-            "origin_iata": getattr(f, "origin_airport_iata", None),
-            "destination_iata": getattr(f, "destination_airport_iata", None),
+            "lat": match.latitude,
+            "lng": match.longitude,
+            "altitude": match.altitude,
+            "speed": match.ground_speed,
+            "heading": match.heading,
+            "origin_iata": getattr(match, "origin_airport_iata", None),
+            "destination_iata": getattr(match, "destination_airport_iata", None),
             "source": "live",
         }
     except Exception as e:
-        logger.warning(f"FlightRadar24 unavailable for {flight_iata}: {e}")
+        logger.warning(f"FlightRadar24 unavailable for {flight_number}: {e}")
         return None
 
 
