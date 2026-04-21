@@ -14,11 +14,19 @@ const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 function GlobeWithData() {
   const { parcels, loading, setParcels } = useParcels();
   const flightPositions = useFlightPositions(parcels);
+  const flightPositionsRef = useRef(flightPositions);
+  flightPositionsRef.current = flightPositions;
+
   const globeRef = useRef<any>(null);
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
-    const pos = parcel.estimated_position;
+    // Priorité : position live si disponible, sinon estimated_position DB
+    const live = flightPositionsRef.current[parcel.id];
+    const pos = (live?.source === "live" && live.lat != null && live.lng != null)
+      ? { lat: live.lat, lng: live.lng }
+      : parcel.estimated_position;
+
     if (pos && globeRef.current) {
       globeRef.current.pointOfView(
         { lat: pos.lat, lng: pos.lng, altitude: 1.5 },
