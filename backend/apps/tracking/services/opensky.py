@@ -6,62 +6,91 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 OPENSKY_BASE = "https://opensky-network.org/api"
+MIN_CRUISE_ALT = 5000  # m — en dessous = pas un long-courrier
 
 
 def _auth() -> Optional[tuple]:
     user = getattr(settings, "OPENSKY_USER", None)
-    pwd = getattr(settings, "OPENSKY_PASS", None)
-    if user and pwd:
-        return (user, pwd)
-    return None
+    pwd  = getattr(settings, "OPENSKY_PASS", None)
+    return (user, pwd) if user and pwd else None
 
 
 def get_flight_live_position(callsign: str) -> Optional[dict]:
     """
     Cherche un vol par callsign sur OpenSky Network.
-    Retourne la position live ou None si introuvable.
-    callsign : ex. 'SQ335', 'AF006'
+    - Envoie le callsign padded 8 chars (requis par l'API)
+    - Filtre les résultats : retient seulement les avions en croisiere (alt > 5000m)
+    - Log le callsign exact retourné pour faciliter le debug
     """
     try:
-        padded = callsign.upper().ljust(8)  # OpenSky attend 8 chars
-        auth = _auth()
-        params = {"callsign": padded}
-        resp = httpx.get(
+        # OpenSky attend exactement 8 chars, mais peut retourner plusieurs résultats
+        padded = callsign.upper().ljust(8)
+        auth   = _auth()
+        resp   = httpx.get(
             f"{OPENSKY_BASE}/states/all",
-            params=params,
+            params={"callsign": padded},
             auth=auth,
             timeout=10.0,
         )
         resp.raise_for_status()
-        data = resp.json()
-        states = data.get("states")
+        data   = resp.json()
+        states = data.get("states") or []
+
         if not states:
-            logger.info(f"OpenSky: aucun vol trouvé pour callsign={callsign}")
+            logger.info(f"[OpenSky] Aucun état pour callsign={callsign!r}")
             return None
 
-        # Colonnes OpenSky : [icao24, callsign, origin_country, time_position,
+        # Colonnes : [icao24, callsign, origin_country, time_position,
         #   last_contact, longitude, latitude, baro_altitude, on_ground,
         #   velocity, true_track, vertical_rate, sensors, geo_altitude,
         #   squawk, spi, position_source]
-        s = states[0]
-        on_ground = s[8]
-        latitude = s[6]
-        longitude = s[5]
-        if on_ground or latitude is None or longitude is None:
-            logger.info(f"OpenSky: vol {callsign} au sol ou position inconnue")
-            return None
+        for s in states:
+            raw_callsign = (s[1] or "").strip()
+            on_ground    = s[8]
+            lat          = s[6]
+            lng          = s[5]
+            geo_alt      = s[13]  # m
+            baro_alt     = s[7]   # m
+            alt          = geo_alt if geo_alt is not None else baro_alt
 
-        return {
-            "lat": latitude,
-            "lng": longitude,
-            "altitude": s[13],       # geo_altitude en mètres
-            "speed": s[9],           # velocity en m/s
-            "heading": s[10],        # true_track en degrés
-            "origin_iata": None,     # OpenSky ne fournit pas les IATA
-            "destination_iata": None,
-            "source": "live",
-            "provider": "opensky",
-        }
+            logger.debug(
+                f"[OpenSky] candidate: callsign={raw_callsign!r} "
+                f"lat={lat} lng={lng} alt={alt} on_ground={on_ground}"
+            )
+
+            if on_ground or lat is None or lng is None:
+                continue
+
+            # Rejeter les avions trop bas (hélicos, petits avions locaux)
+            if alt is None or alt < MIN_CRUISE_ALT:
+                logger.info(
+                    f"[OpenSky] Rejeté {raw_callsign!r} : alt={alt}m < {MIN_CRUISE_ALT}m"
+                )
+                continue
+
+            logger.info(
+                f"[OpenSky] Match retenu : callsign={raw_callsign!r} "
+                f"lat={lat} lng={lng} alt={alt}m"
+            )
+            return {
+                "lat":              lat,
+                "lng":              lng,
+                "altitude":         alt,
+                "speed":            s[9],
+                "heading":          s[10],
+                "callsign":         raw_callsign,
+                "origin_iata":      None,
+                "destination_iata": None,
+                "source":           "live",
+                "provider":         "opensky",
+            }
+
+        logger.info(
+            f"[OpenSky] Aucun avion en croisiere pour callsign={callsign!r} "
+            f"({len(states)} candidat(s) rejete(s))"
+        )
+        return None
+
     except Exception as e:
-        logger.warning(f"OpenSky indisponible pour {callsign}: {e}")
+        logger.warning(f"[OpenSky] Indisponible pour {callsign}: {e}")
         return None
