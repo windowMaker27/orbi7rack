@@ -122,10 +122,7 @@ function buildPoints(parcels: Parcel[]) {
     }).filter(Boolean);
 }
 
-function buildTransportArcs(
-  parcels: Parcel[],
-  flightPositions: FlightPositionMap = {}
-) {
+function buildTransportArcs(parcels: Parcel[]) {
   return parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -134,47 +131,25 @@ function buildTransportArcs(
       if (!origin || !dest) return null;
 
       const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
-      const live  = flightPositions[p.id];
 
-      // Position live OpenSky disponible → on l'utilise directement
-      if (live && live.source === "live") {
-        return {
-          id: p.id,
-          startLat: origin[0], startLng: origin[1],
-          endLat: dest.lat, endLng: dest.lng,
-          color: STATUS_COLORS[p.status] ?? "#fff",
-          emoji,
-          // Coordonnées réelles du vol
-          liveLat: live.lat,
-          liveLng: live.lng,
-          // Altitude normalisée entre 0 et ARC_ALTITUDE (OpenSky donne des mètres, FL350 ≈ 10 700m)
-          liveAlt: Math.min(ARC_ALTITUDE, ((live.altitude ?? 0) / 12000) * ARC_ALTITUDE),
-          isLive: true,
-        };
-      }
-
-      // Fallback : interpolation temporelle (comportement original)
+      // tReal : fallback temporel si pas de position live
       const events = (p as any).events ?? [];
       const sortedGeo = [...events]
         .filter((e: any) => e.latitude !== null && e.longitude !== null)
         .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
       const firstTs = sortedGeo.length > 0
         ? new Date(sortedGeo[0].timestamp).getTime()
         : Date.now() - 86400000 * 7;
-
-      const tReal = live?.progress ?? Math.min(1, Math.max(0,
-        (Date.now() - firstTs) / (Date.now() - firstTs || 1)
-      ));
+      const elapsed = Date.now() - firstTs;
+      const tReal = Math.min(0.95, Math.max(0.05, elapsed / (elapsed + 1)));
 
       return {
         id: p.id,
         startLat: origin[0], startLng: origin[1],
-        endLat: dest.lat, endLng: dest.lng,
+        endLat: dest.lat,   endLng: dest.lng,
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji,
         tReal,
-        isLive: false,
       };
     }).filter(Boolean);
 }
@@ -240,10 +215,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
   const pendingRef   = useRef<Parcel[]>(parcels);
   const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef     = useRef<THREE.Scene | null>(null);
-  // Ref pour accéder aux flightPositions dans la boucle d'animation sans re-créer les sprites
+  // Toujours à jour dans la boucle d'animation sans re-créer les sprites
   const flightPosRef = useRef<FlightPositionMap>(flightPositions);
 
-  // Sync flightPositions dans la ref à chaque render
   useEffect(() => {
     flightPosRef.current = flightPositions;
   }, [flightPositions]);
@@ -256,7 +230,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
       spritesRef.current = setupTransportSprites(
         sceneRef.current,
-        buildTransportArcs(parcels, flightPosRef.current) as any[]
+        buildTransportArcs(parcels) as any[]
       );
     }
   }, [parcels, globeRef]);
@@ -318,7 +292,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
       applyData(globe, pendingRef.current);
       spritesRef.current = setupTransportSprites(
         scene,
-        buildTransportArcs(pendingRef.current, flightPosRef.current) as any[]
+        buildTransportArcs(pendingRef.current) as any[]
       );
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
@@ -343,22 +317,15 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
           let lng: number;
           let alt: number;
 
-          if (arc.isLive) {
-            // Position live OpenSky : coordonnées réelles de l'avion
-            const livePos = flightPosRef.current[arc.id];
-            if (livePos && livePos.source === "live") {
-              lat = livePos.lat;
-              lng = livePos.lng;
-              alt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 0) / 12000) * ARC_ALTITUDE);
-            } else {
-              // OpenSky a perdu le signal entre deux polls → fallback SLERP
-              lat = arc.liveLat;
-              lng = arc.liveLng;
-              alt = arc.liveAlt;
-            }
+          // Priorité 1 : position live OpenSky (toujours vérifiée, peu importe l'état initial)
+          const livePos = flightPosRef.current[arc.id];
+          if (livePos && livePos.source === "live" && livePos.lat != null && livePos.lng != null) {
+            lat = livePos.lat;
+            lng = livePos.lng;
+            alt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 0) / 12000) * ARC_ALTITUDE);
           } else {
-            // Position simulée par interpolation
-            const t = arc.tReal ?? 0.5;
+            // Priorité 2 : interpolation SLERP sur la route
+            const t = livePos?.progress ?? arc.tReal ?? 0.5;
             [lat, lng] = slerpLatLng(
               arc.startLat, arc.startLng,
               arc.endLat,   arc.endLng,
