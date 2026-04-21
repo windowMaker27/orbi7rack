@@ -1,6 +1,8 @@
 """
 Seed de données de démo — 4 colis sur différents continents
+Crée automatiquement un superuser admin/admin si inexistant.
 Usage : docker compose exec backend python scripts/seed_demo.py
+        ou : make seed-demo
 """
 import os
 import sys
@@ -16,12 +18,14 @@ from apps.tracking.models import Parcel, TrackingEvent
 
 User = get_user_model()
 
-# --- Chargement du premier user (admin) ---
-user = User.objects.first()
-if not user:
-    print("[ERROR] Aucun utilisateur trouvé. Créez-en un d'abord.")
-    sys.exit(1)
+# --- Création automatique de l'admin si inexistant ---
+if not User.objects.filter(username="admin").exists():
+    User.objects.create_superuser(username="admin", email="admin@orbi7rack.local", password="admin")
+    print("[INFO] Superuser admin/admin créé.")
+else:
+    print("[INFO] Superuser admin déjà existant.")
 
+user = User.objects.get(username="admin")
 print(f"[INFO] Seed pour l'utilisateur : {user.username}")
 
 # --- Nettoyage des données de démo existantes ---
