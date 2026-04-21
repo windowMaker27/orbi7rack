@@ -326,9 +326,9 @@ export default function Globe({ parcels, globeRef }: GlobeProps) {
           const altFraction = Math.sin(t * Math.PI) * ARC_ALTITUDE;
           const r   = R * (1 + altFraction);
           const phi   = (90 - lat) * Math.PI / 180;
-          const theta = (lng + 180) * Math.PI / 180;
+          const theta = lng * Math.PI / 180;
           sprite.position.set(
-            -r * Math.sin(phi) * Math.cos(theta),
+             r * Math.sin(phi) * Math.cos(theta),
              r * Math.cos(phi),
              r * Math.sin(phi) * Math.sin(theta)
           );
