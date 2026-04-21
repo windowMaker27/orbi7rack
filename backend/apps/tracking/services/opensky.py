@@ -9,10 +9,14 @@ OPENSKY_BASE = "https://opensky-network.org/api"
 MIN_CRUISE_ALT = 5000
 
 
-def _auth() -> Optional[tuple]:
-    user = getattr(settings, "OPENSKY_USER", None)
-    pwd  = getattr(settings, "OPENSKY_PASS", None)
-    return (user, pwd) if user and pwd else None
+def _auth() -> Optional[httpx.BasicAuth]:
+    user = getattr(settings, "OPENSKY_USER", "") or ""
+    pwd  = getattr(settings, "OPENSKY_PASS", "") or ""
+    if user and pwd:
+        logger.debug(f"[OpenSky] Auth activée pour l'utilisateur: {user!r}")
+        return httpx.BasicAuth(user, pwd)
+    logger.warning("[OpenSky] Aucune auth configurée — quota anonyme (400 req/jour partagées)")
+    return None
 
 
 def get_flight_live_position(callsign: str) -> Optional[dict]:
@@ -34,22 +38,20 @@ def get_flight_live_position(callsign: str) -> Optional[dict]:
             logger.info(f"[OpenSky] Aucun état pour callsign={target!r}")
             return None
 
-        # LOG tous les callsigns retournés pour identifier le format exact
         logger.warning(
             f"[OpenSky] {len(states)} candidat(s) pour {target!r} : "
             + str([(s[1], s[6], s[5], s[13], s[7]) for s in states])
         )
 
         for s in states:
-            raw     = (s[1] or "").strip().upper()
-            lat     = s[6]
-            lng     = s[5]
-            geo_alt = s[13]
-            baro_alt= s[7]
-            alt     = geo_alt if geo_alt is not None else baro_alt
+            raw      = (s[1] or "").strip().upper()
+            lat      = s[6]
+            lng      = s[5]
+            geo_alt  = s[13]
+            baro_alt = s[7]
+            alt      = geo_alt if geo_alt is not None else baro_alt
             on_ground = s[8]
 
-            # Match : le callsign retourné doit contenir notre target
             if target not in raw:
                 logger.debug(f"[OpenSky] Mismatch: {raw!r} ne contient pas {target!r}")
                 continue
