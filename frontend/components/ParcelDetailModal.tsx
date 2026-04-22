@@ -38,6 +38,16 @@ const SOURCE_LABELS: Record<string, string> = {
   origin_country: "Position estimée (origine)",
 };
 
+function staleSince(isoDate?: string | null): string {
+  if (!isoDate) return "";
+  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const diffMin = Math.round(diffMs / 60_000);
+  if (diffMin < 1) return "il y a moins d'1 min";
+  if (diffMin < 60) return `il y a ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  return `il y a ${diffH}h`;
+}
+
 interface ParcelDetailModalProps {
   parcel: Parcel;
   onClose: () => void;
@@ -61,6 +71,7 @@ export default function ParcelDetailModal({
   const showModeSwitch = flightPosition?.source === "live" && onToggleMode != null;
   const activeMode: PositionMode = positionMode ?? "arc";
   const isStale = flightPosition?.stale === true;
+  const staleLabel = isStale ? staleSince((flightPosition as any)?.stale_since) : "";
 
   const c = {
     bg:        isDark ? "rgba(15,3,0,0.94)"        : "rgba(240,237,232,0.97)",
@@ -148,13 +159,15 @@ export default function ParcelDetailModal({
           ))}
         </div>
 
-        {/* Bannière stale */}
+        {/* Bannière stale avec durée */}
         {isStale && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: c.warnBg, border: `1px solid ${c.warnBdr}`, borderRadius: 8, padding: "7px 12px" }}>
-            <span style={{ fontSize: 13 }}>⚠️</span>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: c.warnBg, border: `1px solid ${c.warnBdr}`, borderRadius: 8, padding: "8px 12px" }}>
+            <span style={{ fontSize: 13, marginTop: 1 }}>⚠️</span>
             <div>
-              <div style={{ color: c.warning, fontFamily: "monospace", fontSize: 9, letterSpacing: 1, fontWeight: "bold" }}>SIGNAL PERDU</div>
-              <div style={{ color: c.warning + "99", fontFamily: "monospace", fontSize: 9, marginTop: 2 }}>Dernière position connue — OpenSky indisponible</div>
+              <div style={{ color: c.warning, fontFamily: "monospace", fontSize: 9, letterSpacing: 1, fontWeight: "bold" }}>SIGNAL PERDU — POSITION EN CACHE</div>
+              <div style={{ color: c.warning + "bb", fontFamily: "monospace", fontSize: 9, marginTop: 3 }}>
+                OpenSky indisponible · dernière position {staleLabel}
+              </div>
             </div>
           </div>
         )}
@@ -188,8 +201,26 @@ export default function ParcelDetailModal({
         {/* Position live */}
         {flightPosition && (
           <div style={{ background: c.accentDim, border: `1px solid ${isStale ? c.warnBdr : c.accentBdr}`, borderRadius: 8, padding: "8px 12px" }}>
-            <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 4 }}>
-              POSITION{isStale ? " 🟡 CACHE" : flightPosition.source === "live" ? " 🟢 LIVE" : " ⏳ SIMULÉE"}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 2 }}>
+                POSITION{isStale ? " 🟡 CACHE" : flightPosition.source === "live" ? " 🟢 LIVE" : " ⏳ SIMULÉE"}
+              </div>
+              {/* Badge stale durée */}
+              {isStale && staleLabel && (
+                <span style={{
+                  background: c.warnBg,
+                  border: `1px solid ${c.warnBdr}`,
+                  borderRadius: 20,
+                  color: c.warning,
+                  fontFamily: "monospace",
+                  fontSize: 8,
+                  padding: "2px 7px",
+                  letterSpacing: 0.5,
+                  whiteSpace: "nowrap",
+                }}>
+                  🕐 {staleLabel}
+                </span>
+              )}
             </div>
             <div style={{ color: isStale ? c.warning : c.accent, fontFamily: "monospace", fontSize: 11 }}>
               {flightPosition.lat.toFixed(4)}, {flightPosition.lng.toFixed(4)}

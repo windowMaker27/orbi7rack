@@ -73,6 +73,7 @@ function GlobeWithData() {
         onSelectParcel={handleSelectParcel}
         onParcelAdded={handleParcelAdded}
         onDeleteParcel={handleDeleteParcel}
+        flightPositions={flightPositions}
         theme={theme}
       />
       <TopBar />

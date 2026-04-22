@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import AddParcelModal from "./AddParcelModal";
 import type { Parcel } from "@/hooks/useParcels";
 import type { Theme } from "@/context/ThemeContext";
-import AddParcelModal from "@/components/AddParcelModal";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "En attente",
@@ -39,210 +39,186 @@ interface SidebarProps {
   onParcelAdded: (parcel: Parcel) => void;
   onDeleteParcel: (id: number) => void;
   theme: Theme;
+  /** Map parcelId → FlightPosition pour afficher le badge stale */
+  flightPositions?: Record<number, { stale?: boolean; stale_since?: string | null }>;
 }
 
-export default function Sidebar({ parcels, loading, onSelectParcel, onParcelAdded, onDeleteParcel, theme }: SidebarProps) {
-  const [open, setOpen] = useState(true);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
+function staleSince(isoDate?: string | null): string {
+  if (!isoDate) return "";
+  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const diffMin = Math.round(diffMs / 60_000);
+  if (diffMin < 1) return "<1 min";
+  if (diffMin < 60) return `${diffMin} min`;
+  return `${Math.round(diffMin / 60)}h`;
+}
 
+export default function Sidebar({
+  parcels, loading, onSelectParcel, onParcelAdded, onDeleteParcel, theme, flightPositions = {},
+}: SidebarProps) {
+  const [showAdd, setShowAdd] = useState(false);
   const isDark = theme === "dark";
   const STATUS_COLORS = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
 
   const c = {
-    bg:        isDark ? "rgba(10,0,0,0.75)"       : "rgba(240,237,232,0.88)",
-    border:    isDark ? "rgba(255,68,0,0.2)"       : "rgba(0,102,204,0.2)",
-    accent:    isDark ? "#ff6600"                  : "#0066cc",
-    accentBg:  isDark ? "rgba(255,68,0,0.15)"      : "rgba(0,102,204,0.1)",
-    accentHov: isDark ? "rgba(255,68,0,0.3)"       : "rgba(0,102,204,0.2)",
-    selBg:     isDark ? "rgba(255,68,0,0.12)"      : "rgba(0,102,204,0.08)",
-    hovBg:     isDark ? "rgba(255,68,0,0.07)"      : "rgba(0,102,204,0.04)",
-    text:      isDark ? "#ffffff"                  : "#1a1a2e",
-    muted:     isDark ? "rgba(255,255,255,0.35)"   : "rgba(26,26,46,0.5)",
-    danger:    isDark ? "#ff4444"                  : "#cc2200",
-    dangerBg:  isDark ? "rgba(255,68,68,0.15)"     : "rgba(204,34,0,0.08)",
-    toggle:    isDark ? "rgba(10,0,0,0.75)"        : "rgba(240,237,232,0.88)",
-  };
-
-  const handleSelect = (parcel: Parcel) => {
-    setSelected(parcel.id);
-    onSelectParcel(parcel);
+    bg:        isDark ? "rgba(10,2,0,0.92)"    : "rgba(240,237,232,0.95)",
+    border:    isDark ? "rgba(255,68,0,0.2)"   : "rgba(0,80,160,0.18)",
+    accent:    isDark ? "#ff6600"              : "#0066cc",
+    accentDim: isDark ? "rgba(255,68,0,0.06)" : "rgba(0,102,204,0.05)",
+    accentBdr: isDark ? "rgba(255,68,0,0.12)" : "rgba(0,80,160,0.15)",
+    accentLbl: isDark ? "rgba(255,68,0,0.5)"  : "rgba(0,80,180,0.65)",
+    text:      isDark ? "#ffffff"              : "#0f0f1a",
+    muted:     isDark ? "#ffffff88"            : "rgba(15,15,26,0.7)",
+    faint:     isDark ? "#ffffff33"            : "rgba(15,15,26,0.4)",
+    card:      isDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.65)",
+    cardBdr:   isDark ? "rgba(255,68,0,0.08)" : "rgba(0,80,160,0.15)",
+    cardHov:   isDark ? "rgba(255,68,0,0.05)" : "rgba(0,80,160,0.04)",
+    warning:   isDark ? "#ffaa00"              : "#b86e00",
+    warnBg:    isDark ? "rgba(255,170,0,0.08)" : "rgba(184,110,0,0.06)",
+    warnBdr:   isDark ? "rgba(255,170,0,0.22)" : "rgba(184,110,0,0.18)",
   };
 
   return (
     <>
       <div style={{
-        position: "fixed", top: 0, left: 0,
-        height: "100vh", zIndex: 100,
-        display: "flex", alignItems: "stretch",
-        pointerEvents: "none",
+        position: "fixed", top: 0, left: 0, bottom: 0,
+        width: 260, zIndex: 100,
+        background: c.bg,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        borderRight: `1px solid ${c.border}`,
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
       }}>
-        {/* Panel */}
+        {/* Logo / titre */}
         <div style={{
-          width: open ? 300 : 0,
-          overflow: "hidden",
-          transition: "width 0.35s cubic-bezier(0.16,1,0.3,1)",
-          pointerEvents: "auto",
+          padding: "18px 16px 12px",
+          borderBottom: `1px solid ${c.border}`,
+          display: "flex", alignItems: "center", gap: 10,
         }}>
           <div style={{
-            width: 300, height: "100%",
-            background: c.bg,
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            borderRight: `1px solid ${c.border}`,
-            display: "flex", flexDirection: "column",
-            padding: "24px 0",
-          }}>
-            {/* Header */}
-            <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "0 20px 16px",
-              borderBottom: `1px solid ${c.border}`,
-            }}>
-              <h2 style={{
-                color: c.accent, fontFamily: "monospace",
-                fontSize: 13, letterSpacing: 3,
-                textTransform: "uppercase", margin: 0,
-              }}>
-                Colis ({parcels.length})
-              </h2>
-              <button
-                onClick={() => setShowModal(true)}
-                title="Ajouter un colis"
-                style={{
-                  background: c.accentBg,
-                  border: `1px solid ${c.border}`,
-                  borderRadius: 6, color: c.accent,
-                  cursor: "pointer", width: 28, height: 28,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 18, lineHeight: 1, transition: "background 0.2s",
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = c.accentHov)}
-                onMouseLeave={e => (e.currentTarget.style.background = c.accentBg)}
-              >+</button>
-            </div>
-
-            {/* Liste */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
-              {loading && (
-                <p style={{ color: c.muted, fontFamily: "monospace", fontSize: 12, padding: "16px 20px" }}>
-                  Chargement...
-                </p>
-              )}
-              {!loading && parcels.length === 0 && (
-                <div style={{ padding: "24px 20px", textAlign: "center" }}>
-                  <p style={{ color: c.muted, fontFamily: "monospace", fontSize: 12, marginBottom: 12 }}>
-                    Aucun colis suivi
-                  </p>
-                  <button
-                    onClick={() => setShowModal(true)}
-                    style={{
-                      background: c.accentBg, border: `1px solid ${c.border}`,
-                      borderRadius: 6, color: c.accent, cursor: "pointer",
-                      padding: "8px 16px", fontFamily: "monospace", fontSize: 12,
-                    }}
-                  >+ Ajouter un colis</button>
-                </div>
-              )}
-
-              {parcels.map(parcel => (
-                <div
-                  key={parcel.id}
-                  style={{ position: "relative" }}
-                  onMouseEnter={() => setHoveredId(parcel.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                >
-                  <button
-                    onClick={() => handleSelect(parcel)}
-                    style={{
-                      width: "100%",
-                      background: selected === parcel.id ? c.selBg : hoveredId === parcel.id ? c.hovBg : "transparent",
-                      border: "none",
-                      borderLeft: `3px solid ${selected === parcel.id ? STATUS_COLORS[parcel.status] ?? c.accent : "transparent"}`,
-                      padding: "12px 40px 12px 20px",
-                      cursor: "pointer", textAlign: "left",
-                      transition: "background 0.2s",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{
-                        width: 8, height: 8, borderRadius: "50%",
-                        background: STATUS_COLORS[parcel.status] ?? c.accent,
-                        flexShrink: 0,
-                        boxShadow: isDark ? `0 0 6px ${STATUS_COLORS[parcel.status] ?? c.accent}` : "none",
-                      }} />
-                      <span style={{
-                        color: c.text, fontFamily: "monospace",
-                        fontSize: 12, fontWeight: "bold",
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        {parcel.tracking_number}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ color: STATUS_COLORS[parcel.status] ?? c.muted, fontFamily: "monospace", fontSize: 11 }}>
-                        {STATUS_LABELS[parcel.status] ?? parcel.status}
-                      </span>
-                      {parcel.description && (
-                        <span style={{ color: c.muted, fontFamily: "monospace", fontSize: 10 }}>
-                          {parcel.description.slice(0, 16)}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-
-                  {/* Bouton supprimer — visible au hover */}
-                  {hoveredId === parcel.id && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onDeleteParcel(parcel.id); }}
-                      title="Supprimer ce colis"
-                      style={{
-                        position: "absolute", right: 10, top: "50%",
-                        transform: "translateY(-50%)",
-                        background: c.dangerBg,
-                        border: `1px solid ${isDark ? "rgba(255,68,68,0.3)" : "rgba(204,34,0,0.2)"}`,
-                        borderRadius: 5,
-                        color: c.danger,
-                        cursor: "pointer",
-                        width: 24, height: 24,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 12, transition: "all 0.15s",
-                      }}
-                    >🗑</button>
-                  )}
-                </div>
-              ))}
-            </div>
+            width: 28, height: 28,
+            background: c.accent,
+            borderRadius: 6,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14,
+          }}>📦</div>
+          <div>
+            <div style={{ color: c.accent, fontFamily: "monospace", fontSize: 12, fontWeight: "bold", letterSpacing: 2 }}>ORBI7RACK</div>
+            <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 1 }}>PARCEL TRACKER</div>
           </div>
         </div>
 
-        {/* Toggle tab */}
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{
-            alignSelf: "center",
-            pointerEvents: "auto",
-            background: c.toggle,
-            backdropFilter: "blur(16px)",
-            border: `1px solid ${c.border}`,
-            borderLeft: "none",
-            borderRadius: "0 6px 6px 0",
-            color: c.accent,
-            cursor: "pointer",
-            padding: "12px 6px",
-            fontFamily: "monospace",
-            fontSize: 14, lineHeight: 1,
-            transition: "all 0.2s",
-          }}
-          title={open ? "Fermer" : "Ouvrir"}
-        >{open ? "◀" : "▶"}</button>
+        {/* Liste */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px", scrollbarWidth: "thin" }}>
+          {loading ? (
+            <div style={{ color: c.muted, fontFamily: "monospace", fontSize: 11, textAlign: "center", marginTop: 40 }}>
+              Chargement...
+            </div>
+          ) : parcels.length === 0 ? (
+            <div style={{ color: c.faint, fontFamily: "monospace", fontSize: 10, textAlign: "center", marginTop: 40, lineHeight: 1.8 }}>
+              Aucun colis suivi.<br/>Ajoutez-en un ci-dessous.
+            </div>
+          ) : (
+            parcels.map(parcel => {
+              const statusColor = STATUS_COLORS[parcel.status] ?? (isDark ? "#fff" : "#1a1a2e");
+              const fp = flightPositions[parcel.id];
+              const isStale = fp?.stale === true;
+              const staleAge = isStale ? staleSince(fp?.stale_since) : "";
+
+              return (
+                <div
+                  key={parcel.id}
+                  onClick={() => onSelectParcel(parcel)}
+                  style={{
+                    background: c.card,
+                    border: `1px solid ${isStale ? c.warnBdr : c.cardBdr}`,
+                    borderRadius: 8,
+                    padding: "9px 12px",
+                    marginBottom: 6,
+                    cursor: "pointer",
+                    transition: "background 150ms ease, border-color 150ms ease",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = c.cardHov)}
+                  onMouseLeave={e => (e.currentTarget.style.background = c.card)}
+                >
+                  {/* Ligne 1 : tracking + badge stale */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div style={{ color: c.text, fontFamily: "monospace", fontSize: 10, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isStale ? 130 : "100%" }}>
+                      {parcel.tracking_number}
+                    </div>
+                    {isStale && (
+                      <span style={{
+                        background: c.warnBg,
+                        border: `1px solid ${c.warnBdr}`,
+                        borderRadius: 20,
+                        color: c.warning,
+                        fontFamily: "monospace",
+                        fontSize: 7,
+                        padding: "2px 6px",
+                        whiteSpace: "nowrap",
+                        letterSpacing: 0.3,
+                        flexShrink: 0,
+                      }}>
+                        🕐 {staleAge}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Ligne 2 : statut + route */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{
+                        width: 5, height: 5, borderRadius: "50%",
+                        background: statusColor,
+                        boxShadow: isDark ? `0 0 4px ${statusColor}` : "none",
+                        flexShrink: 0,
+                      }} />
+                      <span style={{ color: statusColor, fontFamily: "monospace", fontSize: 9 }}>
+                        {STATUS_LABELS[parcel.status] ?? parcel.status}
+                      </span>
+                    </div>
+                    {(parcel.origin_country || parcel.dest_country) && (
+                      <span style={{ color: c.faint, fontFamily: "monospace", fontSize: 8 }}>
+                        {parcel.origin_country || "?"} → {parcel.dest_country || "?"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Bouton ajout */}
+        <div style={{ padding: "10px 10px", borderTop: `1px solid ${c.border}` }}>
+          <button
+            onClick={() => setShowAdd(true)}
+            style={{
+              width: "100%",
+              background: c.accentDim,
+              border: `1px solid ${c.accentBdr}`,
+              borderRadius: 8,
+              color: c.accent,
+              fontFamily: "monospace",
+              fontSize: 11,
+              padding: "9px 0",
+              cursor: "pointer",
+              letterSpacing: 1,
+              transition: "all 150ms ease",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = isDark ? "rgba(255,68,0,0.12)" : "rgba(0,102,204,0.1)")}
+            onMouseLeave={e => (e.currentTarget.style.background = c.accentDim)}
+          >
+            + AJOUTER UN COLIS
+          </button>
+        </div>
       </div>
 
-      {showModal && (
+      {showAdd && (
         <AddParcelModal
-          onClose={() => setShowModal(false)}
-          onAdded={parcel => { onParcelAdded(parcel); setSelected(parcel.id); }}
+          onClose={() => setShowAdd(false)}
+          onParcelAdded={(p) => { onParcelAdded(p); setShowAdd(false); }}
+          theme={theme}
         />
       )}
     </>

@@ -16,18 +16,16 @@ export interface FlightPosition {
   progress?: number;
   origin?: { lat: number; lng: number };
   destination?: { lat: number; lng: number };
-  /** true si la position vient du cache local (OpenSky indisponible) */
+  /** true si la position vient du cache DB (OpenSky indisponible) */
   stale?: boolean;
+  /** ISO date de la dernière position live fraîche */
+  stale_since?: string | null;
 }
 
 export type FlightPositionMap = Record<number, FlightPosition>;
 export type PositionMode = "arc" | "live";
 export type PositionModeMap = Record<number, PositionMode>;
 
-/**
- * Distance approximative entre deux points (haversine simplifiée, en degrés)
- * utilisée uniquement pour calculer progress sur arc.
- */
 function haversineDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -46,7 +44,6 @@ export function useFlightPositions(parcels: Parcel[]): {
   const [positions, setPositions] = useState<FlightPositionMap>({});
   const [modeOverrides, setModeOverrides] = useState<PositionModeMap>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Cache de la dernière position live valide par parcelId
   const lastLiveRef = useRef<FlightPositionMap>({});
 
   const inTransitParcels = parcels.filter(
@@ -72,29 +69,39 @@ export function useFlightPositions(parcels: Parcel[]): {
 
       for (const r of results) {
         if (r.status !== "fulfilled" || !r.value) continue;
-        const { id, data, parcel } = r.value;
+        const { id, data } = r.value;
 
         if (data.source === "live" && data.lat != null && data.lng != null) {
-          // ✅ Position live fraîche — on met à jour le cache
-          lastLiveRef.current[id] = { ...data, stale: false };
-          next[id] = lastLiveRef.current[id];
-
+          if (data.stale) {
+            // Backend a renvoyé un stale depuis la DB — on garde stale_since du backend
+            const entry: FlightPosition = {
+              ...data,
+              stale: true,
+              stale_since: data.stale_since ?? lastLiveRef.current[id]?.stale_since ?? new Date().toISOString(),
+            };
+            lastLiveRef.current[id] = entry;
+            next[id] = entry;
+          } else {
+            // Position live fraîche
+            const entry: FlightPosition = { ...data, stale: false, stale_since: null };
+            lastLiveRef.current[id] = entry;
+            next[id] = entry;
+          }
         } else if (lastLiveRef.current[id]) {
-          // ⚠️ API a répondu simulated/rate-limité mais on a un cache live
-          // → on garde la dernière position live, marquée stale
-          next[id] = { ...lastLiveRef.current[id], stale: true };
-
+          // API simulated mais on a un cache live — on marque stale
+          const cached = lastLiveRef.current[id];
+          next[id] = {
+            ...cached,
+            stale: true,
+            stale_since: cached.stale_since ?? new Date().toISOString(),
+          };
         } else {
-          // Jamais eu de live — on garde la position simulée MAIS on s'assure
-          // que progress est calculé depuis l'origine réelle, pas depuis la destination.
-          // Si data.progress est absent ou === 1, on le recalcule via haversine.
+          // Jamais eu de live — recalcul progress si nécessaire
           const origin = data.origin;
           const dest   = data.destination;
           let progress = data.progress;
 
           if (origin && dest && (progress == null || progress >= 0.98)) {
-            // Le backend a renvoyé la destination comme position courante.
-            // On calcule la progression réelle origin→dest→data.lat/lng.
             const totalDist = haversineDeg(origin.lat, origin.lng, dest.lat, dest.lng);
             const doneDist  = haversineDeg(origin.lat, origin.lng, data.lat, data.lng);
             progress = totalDist > 0 ? Math.min(0.98, doneDist / totalDist) : 0.5;
@@ -115,8 +122,6 @@ export function useFlightPositions(parcels: Parcel[]): {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access, inTransitParcels.length]);
 
-  // positionMode dérivé de source (ou override manuel)
-  // Si stale, on considère comme "live" car les coords sont celles de l'avion
   const positionMode: PositionModeMap = {};
   for (const [idStr, pos] of Object.entries(positions)) {
     const id = Number(idStr);
