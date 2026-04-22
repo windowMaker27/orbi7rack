@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import type { Parcel } from "@/hooks/useParcels";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const POLL_INTERVAL = 30_000; // 30s
+const POLL_INTERVAL = 30_000;
 
 export interface FlightPosition {
   lat: number;
@@ -18,18 +18,10 @@ export interface FlightPosition {
   destination?: { lat: number; lng: number };
 }
 
-// Map parcelId -> FlightPosition
 export type FlightPositionMap = Record<number, FlightPosition>;
-
 export type PositionMode = "arc" | "live";
 export type PositionModeMap = Record<number, PositionMode>;
 
-/**
- * Poll /api/parcels/{id}/flight_position/ pour tous les colis en transit.
- * Retourne une map parcelId -> FlightPosition + une map parcelId -> PositionMode.
- * mode "live"  : coords directes depuis OpenSky/FR24 (source === "live")
- * mode "arc"   : position interpolée sur l'arc géodésique (source === "simulated")
- */
 export function useFlightPositions(parcels: Parcel[]): {
   positions: FlightPositionMap;
   positionMode: PositionModeMap;
@@ -37,7 +29,8 @@ export function useFlightPositions(parcels: Parcel[]): {
 } {
   const { access } = useAuth();
   const [positions, setPositions] = useState<FlightPositionMap>({});
-  const [positionMode, setPositionMode] = useState<PositionModeMap>({});
+  // overrides manuels : seulement les parcelIds où l'user a cliqué
+  const [modeOverrides, setModeOverrides] = useState<PositionModeMap>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const inTransitParcels = parcels.filter(
@@ -59,26 +52,27 @@ export function useFlightPositions(parcels: Parcel[]): {
     );
 
     const nextPos: FlightPositionMap = {};
-    const nextMode: PositionModeMap = {};
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) {
-        nextPos[r.value.id]  = r.value.data;
-        nextMode[r.value.id] = r.value.data.source === "live" ? "live" : "arc";
+        nextPos[r.value.id] = r.value.data;
       }
     }
     setPositions(nextPos);
-    // Ne pas écraser les overrides manuels — merge en favorisant le state existant
-    setPositionMode(prev => ({ ...nextMode, ...prev }));
   };
 
   useEffect(() => {
     fetchAll();
     timerRef.current = setInterval(fetchAll, POLL_INTERVAL);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access, inTransitParcels.length]);
 
-  return { positions, positionMode, setPositionMode };
+  // positionMode = override manuel si présent, sinon dérivé de source API
+  const positionMode: PositionModeMap = {};
+  for (const [idStr, pos] of Object.entries(positions)) {
+    const id = Number(idStr);
+    positionMode[id] = modeOverrides[id] ?? (pos.source === "live" ? "live" : "arc");
+  }
+
+  return { positions, positionMode, setPositionMode: setModeOverrides };
 }

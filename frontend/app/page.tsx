@@ -15,6 +15,8 @@ const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 function GlobeWithData() {
   const { parcels, loading, setParcels } = useParcels();
   const { positions: flightPositions, positionMode, setPositionMode } = useFlightPositions(parcels);
+
+  // Ref vers les positions live — mis à jour à chaque render
   const flightPositionsRef = useRef(flightPositions);
   flightPositionsRef.current = flightPositions;
 
@@ -22,6 +24,7 @@ function GlobeWithData() {
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
+    // Utilise flightPositionsRef.current (positions, pas l'objet hook entier)
     const live = flightPositionsRef.current[parcel.id];
     const pos = (live?.source === "live" && live.lat != null && live.lng != null)
       ? { lat: live.lat, lng: live.lng }
@@ -39,9 +42,7 @@ function GlobeWithData() {
 
   const handleCloseModal = () => {
     setSelectedParcel(null);
-    if (globeRef.current) {
-      globeRef.current.controls().autoRotate = true;
-    }
+    if (globeRef.current) globeRef.current.controls().autoRotate = true;
   };
 
   const handleParcelAdded = (parcel: Parcel) => {
@@ -72,7 +73,7 @@ function GlobeWithData() {
           parcel={selectedParcel}
           onClose={handleCloseModal}
           flightPosition={flightPositions[selectedParcel.id]}
-          positionMode={positionMode[selectedParcel.id]}
+          positionMode={positionMode[selectedParcel.id] ?? "arc"}
           onToggleMode={handleToggleMode(selectedParcel.id)}
         />
       )}

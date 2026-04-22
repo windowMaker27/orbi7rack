@@ -132,15 +132,12 @@ function buildTransportArcs(parcels: Parcel[]) {
       const origin = getCentroid(p.origin_country);
       const dest   = p.estimated_position;
       if (!origin || !dest) return null;
-
-      const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
-
       return {
         id: p.id,
         startLat: origin[0], startLng: origin[1],
         endLat: dest.lat,   endLng: dest.lng,
         color: STATUS_COLORS[p.status] ?? "#fff",
-        emoji,
+        emoji: p.status === "out_for_delivery" ? "🚚" : "✈️",
         _curLat: null as number | null,
         _curLng: null as number | null,
         _curAlt: null as number | null,
@@ -183,16 +180,13 @@ function applyData(globe: any, parcels: Parcel[]) {
     .ringsData(buildRings(parcels))
     .ringLat((d: any) => d.lat)
     .ringLng((d: any) => d.lng)
-    .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1-t)*255).toString(16).padStart(2,"0")}`)
+    .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1-t)*255).toString(16).padStart(2,"00")}`)
     .ringMaxRadius(3)
     .ringPropagationSpeed(2)
     .ringRepeatPeriod(800);
 }
 
-function setupTransportSprites(
-  scene: THREE.Scene,
-  transportArcs: any[]
-): { sprite: THREE.Sprite; arc: any }[] {
+function setupTransportSprites(scene: THREE.Scene, transportArcs: any[]): { sprite: THREE.Sprite; arc: any }[] {
   return transportArcs.map(arc => {
     const texture  = makeIconTexture(arc.emoji);
     const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, rotation: 0 });
@@ -209,22 +203,19 @@ function lerpAngle(current: number, target: number, t: number): number {
 }
 
 export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {} }: GlobeProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const composerRef  = useRef<EffectComposer | null>(null);
-  const frameRef     = useRef<number>(0);
-  const pendingRef   = useRef<Parcel[]>(parcels);
-  const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
-  const sceneRef     = useRef<THREE.Scene | null>(null);
-  const flightPosRef = useRef<FlightPositionMap>(flightPositions);
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const composerRef     = useRef<EffectComposer | null>(null);
+  const frameRef        = useRef<number>(0);
+  const pendingRef      = useRef<Parcel[]>(parcels);
+  const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
+  const sceneRef        = useRef<THREE.Scene | null>(null);
+  // Refs mis à jour à chaque render — lus dans la boucle animate sans closure stale
+  const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
 
-  useEffect(() => {
-    flightPosRef.current = flightPositions;
-  }, [flightPositions]);
-
-  useEffect(() => {
-    positionModeRef.current = positionMode;
-  }, [positionMode]);
+  // Sync refs à chaque render (pas de useEffect pour éviter le délai d'un frame)
+  flightPosRef.current    = flightPositions;
+  positionModeRef.current = positionMode;
 
   useEffect(() => {
     pendingRef.current = parcels;
@@ -318,7 +309,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           if (!arc) return;
 
           const livePos = flightPosRef.current[arc.id];
-          const mode    = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
+          // Mode : override manuel ou dérivé de source
+          const mode = positionModeRef.current[arc.id]
+            ?? (livePos?.source === "live" ? "live" : "arc");
 
           let targetLat: number;
           let targetLng: number;
@@ -329,14 +322,14 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             const progress = livePos.progress ?? 0.5;
 
             if (mode === "live") {
-              // Coords directes depuis OpenSky/FR24
+              // Coordonnées directes OpenSky/FR24
               targetLat = livePos.lat;
               targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              // Mode arc : position interpolée sur la géodésique origin→destination
+              // Interpolation géodésique sur l'arc origin→destination
               const origin = livePos.origin ?? { lat: arc.startLat, lng: arc.startLng };
-              const dest   = livePos.destination ?? { lat: arc.endLat,   lng: arc.endLng };
+              const dest   = livePos.destination ?? { lat: arc.endLat, lng: arc.endLng };
               [targetLat, targetLng] = slerpLatLng(
                 origin.lat, origin.lng,
                 dest.lat,   dest.lng,
@@ -344,10 +337,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
               );
               targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
-
             targetHdg = livePos.heading ?? null;
           } else {
-            // Pas encore de réponse API : attente au milieu de l'arc
+            // Pas encore de réponse API — milieu de l'arc
             [targetLat, targetLng] = slerpLatLng(
               arc.startLat, arc.startLng,
               arc.endLat,   arc.endLng,
@@ -356,7 +348,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
 
-          // Initialisation au 1er frame
           if (arc._curLat === null) {
             arc._curLat = targetLat;
             arc._curLng = targetLng;
@@ -364,20 +355,14 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             arc._curHdg = targetHdg ?? 0;
           }
 
-          // Lerp position
           arc._curLat += (targetLat - arc._curLat) * LERP_POS;
           arc._curLng += (targetLng - arc._curLng) * LERP_POS;
           arc._curAlt += (targetAlt - arc._curAlt) * LERP_POS;
-
-          // Lerp heading
-          if (targetHdg !== null) {
-            arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
-          }
+          if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
           const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
-          (sprite.material as THREE.SpriteMaterial).rotation =
-            -(arc._curHdg! * Math.PI) / 180;
+          (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
         composer.render();

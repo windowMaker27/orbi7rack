@@ -45,8 +45,9 @@ export default function ParcelDetailModal({
   const statusColor = STATUS_COLORS[parcel.status] ?? "#fff";
   const pos = parcel.estimated_position;
 
-  // Le switch n'est visible que si on a une position live réelle
+  // Switch visible UNIQUEMENT si l'API a renvoyé une position live réelle
   const showModeSwitch = flightPosition?.source === "live" && onToggleMode != null;
+  const activeMode: PositionMode = positionMode ?? "arc";
 
   return (
     <div
@@ -131,47 +132,73 @@ export default function ParcelDetailModal({
           ))}
         </div>
 
-        {/* Mode switch — uniquement si source live */}
+        {/* Switch ARC / LIVE — uniquement si position live disponible */}
         {showModeSwitch && (
           <div style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             background: "rgba(255,68,0,0.06)",
-            border: "1px solid rgba(255,68,0,0.15)",
+            border: "1px solid rgba(255,68,0,0.18)",
             borderRadius: 8,
             padding: "8px 12px",
           }}>
-            <span style={{ color: "#ff440088", fontFamily: "monospace", fontSize: 9, letterSpacing: 2 }}>
+            <span style={{ color: "#ff440099", fontFamily: "monospace", fontSize: 9, letterSpacing: 2 }}>
               MODE POSITION
             </span>
             <div style={{ display: "flex", gap: 4 }}>
-              {(["arc", "live"] as PositionMode[]).map(m => (
-                <button
-                  key={m}
-                  onClick={() => onToggleMode!(m)}
-                  style={{
-                    background: positionMode === m ? "rgba(255,102,0,0.25)" : "transparent",
-                    border: `1px solid ${positionMode === m ? "#ff6600" : "rgba(255,68,0,0.2)"}`,
-                    borderRadius: 4,
-                    color: positionMode === m ? "#ff6600" : "#ff440055",
-                    fontFamily: "monospace",
-                    fontSize: 9,
-                    letterSpacing: 1,
-                    padding: "3px 8px",
-                    cursor: "pointer",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {m === "arc" ? "ARC" : "LIVE"}
-                </button>
-              ))}
+              {(["arc", "live"] as PositionMode[]).map(m => {
+                const isActive = activeMode === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => onToggleMode!(m)}
+                    style={{
+                      background: isActive ? "rgba(255,102,0,0.3)" : "transparent",
+                      border: `1px solid ${isActive ? "#ff6600" : "rgba(255,68,0,0.2)"}`,
+                      borderRadius: 4,
+                      color: isActive ? "#ff6600" : "#ff440055",
+                      fontFamily: "monospace",
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      textTransform: "uppercase",
+                      transition: "all 150ms ease",
+                    }}
+                  >
+                    {m === "arc" ? "🛤 ARC" : "📡 LIVE"}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Position */}
-        {pos && (
+        {/* Position live */}
+        {flightPosition && (
+          <div style={{
+            background: "rgba(255,68,0,0.05)",
+            border: "1px solid rgba(255,68,0,0.12)",
+            borderRadius: 8, padding: "8px 12px",
+          }}>
+            <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 4 }}>
+              POSITION {flightPosition.source === "live" ? "🟢 LIVE" : "⏳ SIMULÉE"}
+            </div>
+            <div style={{ color: "#ff6600", fontFamily: "monospace", fontSize: 11 }}>
+              {flightPosition.lat.toFixed(4)}, {flightPosition.lng.toFixed(4)}
+            </div>
+            {flightPosition.altitude != null && (
+              <div style={{ color: "#ffffff55", fontFamily: "monospace", fontSize: 9, marginTop: 2 }}>
+                Alt: {Math.round(flightPosition.altitude)}m
+                {flightPosition.speed != null ? ` · ${Math.round(flightPosition.speed)} kt` : ""}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Position estimée DB */}
+        {pos && !flightPosition && (
           <div style={{
             background: "rgba(255,68,0,0.05)",
             border: "1px solid rgba(255,68,0,0.12)",
