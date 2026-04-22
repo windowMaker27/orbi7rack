@@ -88,6 +88,9 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
+const HEX_COLORS_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#ffcc00"];
+const HEX_COLORS_LIGHT = ["#0055aa","#0066cc","#1177dd","#3388ee","#2266bb"];
+
 function buildData(parcels:Parcel[], isDark:boolean){
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
 
@@ -137,6 +140,7 @@ function buildData(parcels:Parcel[], isDark:boolean){
 function applyData(globe:any, parcels:Parcel[], isDark:boolean){
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const {points,arcs,rings}=buildData(parcels,isDark);
+  const hexColors = isDark ? HEX_COLORS_DARK : HEX_COLORS_LIGHT;
 
   globe
     .pointsData(points)
@@ -164,6 +168,49 @@ function applyData(globe:any, parcels:Parcel[], isDark:boolean){
     .ringLat((d:any)=>d.lat).ringLng((d:any)=>d.lng)
     .ringColor((d:any)=>(t:number)=>`${d.color}${Math.round((1-t)*255).toString(16).padStart(2,"00")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
+
+  // Réappliquer hexPolygonColor au changement de thème
+  globe.hexPolygonColor(()=>hexColors[Math.floor(Math.random()*hexColors.length)]);
+}
+
+function applyTheme(globe:any, scene:THREE.Scene, isDark:boolean){
+  // Atmosphere + globe material
+  globe
+    .atmosphereColor(isDark ? "#ff4400" : "#0066cc")
+    .globeMaterial(new THREE.MeshPhongMaterial({
+      color:    new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
+      emissive: new THREE.Color(isDark ? "#1a0000" : "#c8dcea"),
+      transparent: true, opacity: 0.95,
+    }));
+
+  // Grille (graticules)
+  setTimeout(()=>{
+    scene.traverse((obj:any)=>{
+      if(obj.isLine||obj.isLineSegments){
+        obj.material=new THREE.LineBasicMaterial({
+          color: new THREE.Color(isDark ? "#ff2200" : "#0044aa"),
+          transparent: true, opacity: 0.3,
+        });
+      }
+    });
+  }, 50);
+
+  // Lumières : vider les anciennes, ajouter les nouvelles
+  const toRemove: THREE.Object3D[] = [];
+  scene.traverse((obj:any)=>{
+    if(obj.isAmbientLight||obj.isDirectionalLight) toRemove.push(obj);
+  });
+  toRemove.forEach(l=>scene.remove(l));
+
+  if(isDark){
+    scene.add(new THREE.AmbientLight(0xff4400, 0.4));
+    const dir=new THREE.DirectionalLight(0xff8800, 1.2);
+    dir.position.set(1,1,1); scene.add(dir);
+  } else {
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dir=new THREE.DirectionalLight(0xaaccff, 1.0);
+    dir.position.set(1,1,1); scene.add(dir);
+  }
 }
 
 function setupSprites(scene:THREE.Scene, transport:any[]):{ sprite:THREE.Sprite; arc:any }[]{
@@ -192,33 +239,36 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
   positionModeRef.current = positionMode;
   themeRef.current        = theme;
 
-  // Quand les colis ou le thème changent → on réapplique les données
+  // Quand les colis ou le thème changent → on réapplique données + thème complet
   useEffect(()=>{
-    pendingRef.current=parcels;
-    if(!globeRef.current)return;
-    const isDark=theme==="dark";
-    applyData(globeRef.current,parcels,isDark);
+    pendingRef.current = parcels;
+    if(!globeRef.current) return;
+    const isDark = theme === "dark";
+    applyData(globeRef.current, parcels, isDark);
     if(sceneRef.current){
+      applyTheme(globeRef.current, sceneRef.current, isDark);
       spritesRef.current.forEach(({sprite})=>sceneRef.current!.remove(sprite));
-      spritesRef.current=setupSprites(sceneRef.current,buildData(parcels,isDark).transport as any[]);
+      spritesRef.current = setupSprites(sceneRef.current, buildData(parcels, isDark).transport as any[]);
     }
-    // Globe material + atmosphere
-    if(globeRef.current){
-      globeRef.current.atmosphereColor(isDark?"#ff4400":"#0066cc");
-      globeRef.current.globeMaterial(
-        new THREE.MeshPhongMaterial({
-          color: new THREE.Color(isDark?"#0d0000":"#dde8f0"),
-          emissive: new THREE.Color(isDark?"#1a0000":"#c8dcea"),
-          transparent:true, opacity:0.95,
-        })
-      );
+    // Bloom
+    if(composerRef.current){
+      const passes = (composerRef.current as any).passes as any[];
+      const effectPass = passes.find((p:any)=>p instanceof EffectPass);
+      if(effectPass){
+        const bloom = (effectPass as any).effects?.find((e:any)=>e instanceof BloomEffect);
+        if(bloom){
+          bloom.intensity = isDark ? 1.8 : 0.6;
+          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.1 : 0.3;
+        }
+      }
     }
-  },[parcels,theme,globeRef]);
+  },[parcels, theme, globeRef]);
 
   useEffect(()=>{
     if(!containerRef.current)return;
     const init=async()=>{
       const isDark=themeRef.current==="dark";
+      const hexColors = isDark ? HEX_COLORS_DARK : HEX_COLORS_LIGHT;
       const [{default:GlobeGL},countries]=await Promise.all([
         import("globe.gl"),
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r=>r.json()),
@@ -241,15 +291,7 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
-        .hexPolygonColor(()=>{
-          if(isDark){
-            const c=["#ff4400","#ff6600","#ff8800","#ffaa00","#ffcc00"];
-            return c[Math.floor(Math.random()*c.length)];
-          } else {
-            const c=["#0055aa","#0066cc","#1177dd","#3388ee","#2266bb"];
-            return c[Math.floor(Math.random()*c.length)];
-          }
-        })
+        .hexPolygonColor(()=>hexColors[Math.floor(Math.random()*hexColors.length)])
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 

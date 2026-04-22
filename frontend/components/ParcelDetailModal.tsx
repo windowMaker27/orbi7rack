@@ -63,18 +63,20 @@ export default function ParcelDetailModal({
   const isStale = flightPosition?.stale === true;
 
   const c = {
-    bg:        isDark ? "rgba(15,3,0,0.94)"        : "rgba(240,237,232,0.96)",
+    bg:        isDark ? "rgba(15,3,0,0.94)"        : "rgba(240,237,232,0.97)",
     border:    isDark ? "rgba(255,68,0,0.25)"       : "rgba(0,102,204,0.2)",
     accent:    isDark ? "#ff6600"                   : "#0066cc",
     accentDim: isDark ? "rgba(255,68,0,0.07)"       : "rgba(0,102,204,0.06)",
-    accentBdr: isDark ? "rgba(255,68,0,0.15)"       : "rgba(0,102,204,0.15)",
-    accentLbl: isDark ? "#ff440066"                 : "rgba(0,102,204,0.5)",
+    accentBdr: isDark ? "rgba(255,68,0,0.15)"       : "rgba(0,102,204,0.2)",
+    accentLbl: isDark ? "#ff440066"                 : "rgba(0,80,180,0.7)",
     accentMid: isDark ? "rgba(255,102,0,0.3)"       : "rgba(0,102,204,0.18)",
-    text:      isDark ? "#ffffff"                   : "#1a1a2e",
-    muted:     isDark ? "#ffffff88"                 : "rgba(26,26,46,0.55)",
-    faint:     isDark ? "#ffffff44"                 : "rgba(26,26,46,0.3)",
-    card:      isDark ? "rgba(255,255,255,0.03)"    : "rgba(255,255,255,0.6)",
-    cardBdr:   isDark ? "rgba(255,68,0,0.1)"        : "rgba(0,102,204,0.1)",
+    text:      isDark ? "#ffffff"                   : "#0f0f1a",
+    muted:     isDark ? "#ffffff88"                 : "rgba(15,15,26,0.75)",
+    faint:     isDark ? "#ffffff44"                 : "rgba(15,15,26,0.5)",
+    card:      isDark ? "rgba(255,255,255,0.03)"    : "rgba(255,255,255,0.7)",
+    cardBdr:   isDark ? "rgba(255,68,0,0.1)"        : "rgba(0,80,160,0.2)",
+    timelineDot: isDark ? "rgba(255,68,0,0.25)"     : "rgba(0,80,160,0.3)",
+    timelineLine: isDark ? "rgba(255,68,0,0.15)"    : "rgba(0,80,160,0.2)",
     danger:    isDark ? "#ff4444"                   : "#cc2200",
     dangerBg:  isDark ? "rgba(255,68,68,0.1)"       : "rgba(204,34,0,0.06)",
     dangerBdr: isDark ? "rgba(255,68,68,0.3)"       : "rgba(204,34,0,0.2)",
@@ -83,6 +85,9 @@ export default function ParcelDetailModal({
     warnBg:    isDark ? "rgba(255,170,0,0.08)"      : "rgba(184,110,0,0.06)",
     warnBdr:   isDark ? "rgba(255,170,0,0.25)"      : "rgba(184,110,0,0.2)",
     liveGreen: isDark ? "#00ff99"                   : "#007a44",
+    eventDesc: isDark ? "rgba(255,255,255,0.8)"     : "rgba(10,10,30,0.85)",
+    eventLoc:  isDark ? "rgba(255,102,0,0.7)"       : "rgba(0,80,160,0.65)",
+    eventDate: isDark ? "rgba(255,255,255,0.4)"     : "rgba(10,10,30,0.5)",
   };
 
   return (
@@ -210,7 +215,7 @@ export default function ParcelDetailModal({
         {/* Historique events */}
         {parcel.events.length > 0 && (
           <div>
-            <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 8 }}>
+            <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 8, fontWeight: "bold" }}>
               HISTORIQUE ({parcel.events.length})
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -219,23 +224,23 @@ export default function ParcelDetailModal({
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 3 }}>
                     <div style={{
                       width: 6, height: 6, borderRadius: "50%",
-                      background: i === 0 ? statusColor : c.cardBdr,
+                      background: i === 0 ? statusColor : c.timelineDot,
                       flexShrink: 0,
                       boxShadow: i === 0 && isDark ? `0 0 5px ${statusColor}` : "none",
                     }} />
                     {i < parcel.events.length - 1 && (
-                      <div style={{ width: 1, flex: 1, minHeight: 12, background: c.cardBdr, margin: "2px 0" }} />
+                      <div style={{ width: 1, flex: 1, minHeight: 12, background: c.timelineLine, margin: "2px 0" }} />
                     )}
                   </div>
                   <div style={{ flex: 1, paddingBottom: 6 }}>
-                    <div style={{ color: c.muted, fontFamily: "monospace", fontSize: 10, lineHeight: 1.4 }}>
+                    <div style={{ color: c.eventDesc, fontFamily: "monospace", fontSize: 10, lineHeight: 1.4 }}>
                       {event.description || event.status}
                     </div>
                     <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
                       {event.location && (
-                        <span style={{ color: c.accent + "88", fontFamily: "monospace", fontSize: 9 }}>📍 {event.location}</span>
+                        <span style={{ color: c.eventLoc, fontFamily: "monospace", fontSize: 9 }}>📍 {event.location}</span>
                       )}
-                      <span style={{ color: c.faint, fontFamily: "monospace", fontSize: 9 }}>
+                      <span style={{ color: c.eventDate, fontFamily: "monospace", fontSize: 9 }}>
                         {new Date(event.timestamp).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}
                       </span>
                     </div>
