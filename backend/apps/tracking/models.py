@@ -1,3 +1,4 @@
+import math
 from django.db import models
 from django.conf import settings
 
@@ -21,8 +22,13 @@ class Parcel(models.Model):
     last_synced_at  = models.DateTimeField(null=True, blank=True)
     created_at      = models.DateTimeField(auto_now_add=True)
     updated_at      = models.DateTimeField(auto_now=True)
-    flight_number = models.CharField(max_length=20, blank=True, null=True,
-                                  help_text="Ex: AF447, pour liaison FlightRadar")
+    flight_number   = models.CharField(max_length=20, blank=True, null=True,
+                                       help_text="Ex: AF447, pour liaison FlightRadar")
+
+    # Dernière position live persistée (survit au reload et au redémarrage Django)
+    last_live_lat   = models.FloatField(null=True, blank=True)
+    last_live_lng   = models.FloatField(null=True, blank=True)
+    last_live_at    = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-updated_at']

@@ -14,7 +14,7 @@ from apps.tracking.models import Parcel
 from apps.tracking.services.parser import sync_parcel_from_17track
 from apps.tracking.services.seventeentrack import SeventeentrackClient
 
-# Centroids approximatifs par code pays ISO-2 (couvre les routes les plus fréquentes)
+# Centroids approximatifs par code pays ISO-2
 COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "FR": (46.2276, 2.2137),
     "DE": (51.1657, 10.4515),
@@ -72,14 +72,12 @@ COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
 
 
 def _country_centroid(country_code: str) -> tuple[float, float] | None:
-    """Retourne le centroid (lat, lng) pour un code ISO-2, ou None."""
     if not country_code:
         return None
     return COUNTRY_CENTROIDS.get(country_code.upper())
 
 
 def _haversine(lat1, lng1, lat2, lng2) -> float:
-    """Distance en km entre deux points GPS (formule haversine)."""
     R = 6371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -89,10 +87,6 @@ def _haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 def _compute_progress(origin: tuple, destination: tuple, current: tuple) -> float:
-    """
-    Estime le % de progression sur l'arc origin->destination.
-    Retourne un float entre 0.0 et 0.95 (jamais 1.0 pour eviter teleportation).
-    """
     total = _haversine(*origin, *destination)
     if total == 0:
         return 0.5
@@ -154,11 +148,11 @@ class ParcelViewSet(
     def flight_position(self, request, pk=None):
         parcel = self.get_object()
 
-        # --- Coordonnees d'arc : centroid pays (stable, pas un hub intermediaire) ---
+        # --- Coordonnees d'arc : centroid pays ---
         origin_coords = _country_centroid(parcel.origin_country)
         dest_coords   = _country_centroid(parcel.dest_country)
 
-        # Fallback sur geo_events si les pays ne sont pas dans la table
+        # Fallback sur geo_events si pays absent de la table
         if not origin_coords or not dest_coords:
             geo_events = parcel.events.filter(
                 latitude__isnull=False, longitude__isnull=False
@@ -177,7 +171,35 @@ class ParcelViewSet(
                     position["progress"]    = _compute_progress(origin_coords, dest_coords, current)
                     position["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
                     position["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}
+
+                # Persiste la position live en DB
+                parcel.last_live_lat = position["lat"]
+                parcel.last_live_lng = position["lng"]
+                parcel.last_live_at  = timezone.now()
+                parcel.save(update_fields=["last_live_lat", "last_live_lng", "last_live_at"])
+
                 return Response(position)
+
+            # Pas de live : fallback sur la dernière position persistée (stale)
+            if parcel.last_live_lat is not None and parcel.last_live_lng is not None:
+                stale: dict = {
+                    "lat":      parcel.last_live_lat,
+                    "lng":      parcel.last_live_lng,
+                    "altitude": None,
+                    "speed":    None,
+                    "heading":  None,
+                    "callsign": parcel.flight_number,
+                    "source":   "live",
+                    "stale":    True,
+                    "stale_since": parcel.last_live_at.isoformat() if parcel.last_live_at else None,
+                    "provider": "db_cache",
+                }
+                if origin_coords and dest_coords:
+                    current = (parcel.last_live_lat, parcel.last_live_lng)
+                    stale["progress"]    = _compute_progress(origin_coords, dest_coords, current)
+                    stale["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
+                    stale["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}
+                return Response(stale)
 
         # --- Fallback : simulation temporelle ---
         if not origin_coords or not dest_coords:
@@ -186,7 +208,6 @@ class ParcelViewSet(
                 status=404,
             )
 
-        # Utilise geo_events pour la fenetre temporelle uniquement
         geo_events = parcel.events.filter(
             latitude__isnull=False, longitude__isnull=False
         ).order_by("timestamp")
