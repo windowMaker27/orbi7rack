@@ -43,8 +43,8 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
 };
 
 const ARC_ALTITUDE = 0.25;
-const LERP_POS     = 0.018; // vitesse interpolation position (~3s pour traverser)
-const LERP_HDG     = 0.06;  // vitesse interpolation heading (~1s)
+const LERP_POS     = 0.018;
+const LERP_HDG     = 0.06;
 
 function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
@@ -134,24 +134,12 @@ function buildTransportArcs(parcels: Parcel[]) {
 
       const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
 
-      const events = (p as any).events ?? [];
-      const sortedGeo = [...events]
-        .filter((e: any) => e.latitude !== null && e.longitude !== null)
-        .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      const firstTs = sortedGeo.length > 0
-        ? new Date(sortedGeo[0].timestamp).getTime()
-        : Date.now() - 86400000 * 7;
-      const elapsed = Date.now() - firstTs;
-      const tReal = Math.min(0.95, Math.max(0.05, elapsed / (elapsed + 1)));
-
       return {
         id: p.id,
         startLat: origin[0], startLng: origin[1],
         endLat: dest.lat,   endLng: dest.lng,
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji,
-        tReal,
-        // état interpolé courant (mutated dans la boucle d'animation)
         _curLat: null as number | null,
         _curLng: null as number | null,
         _curAlt: null as number | null,
@@ -214,9 +202,8 @@ function setupTransportSprites(
   });
 }
 
-/** Lerp angulaire court-circuit sur [-180, 180] */
 function lerpAngle(current: number, target: number, t: number): number {
-  let diff = ((target - current) % 360 + 540) % 360 - 180;
+  const diff = ((target - current) % 360 + 540) % 360 - 180;
   return current + diff * t;
 }
 
@@ -326,30 +313,31 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
 
           const livePos = flightPosRef.current[arc.id];
 
-          // --- Calcul de la cible ---
           let targetLat: number;
           let targetLng: number;
           let targetAlt: number;
           let targetHdg: number | null = null;
 
           if (livePos?.lat != null && livePos?.lng != null) {
+            // position renvoyée par l'API (live ou simulée)
             targetLat = livePos.lat;
             targetLng = livePos.lng;
+            const progress = livePos.progress ?? 0.5;
             targetAlt = livePos.source === "live"
               ? Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE)
-              : Math.sin((livePos.progress ?? 0.5) * Math.PI) * ARC_ALTITUDE;
+              : Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             targetHdg = livePos.heading ?? null;
           } else {
-            const t = arc.tReal ?? 0.5;
+            // Pas encore de réponse API : attente au milieu de l'arc
             [targetLat, targetLng] = slerpLatLng(
               arc.startLat, arc.startLng,
               arc.endLat,   arc.endLng,
-              t
+              0.5
             );
-            targetAlt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
+            targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
 
-          // --- Initialisation au premier frame ---
+          // Initialisation au 1er frame
           if (arc._curLat === null) {
             arc._curLat = targetLat;
             arc._curLng = targetLng;
@@ -357,23 +345,20 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
             arc._curHdg = targetHdg ?? 0;
           }
 
-          // --- Interpolation douce position ---
+          // Lerp position
           arc._curLat += (targetLat - arc._curLat) * LERP_POS;
           arc._curLng += (targetLng - arc._curLng) * LERP_POS;
           arc._curAlt += (targetAlt - arc._curAlt) * LERP_POS;
 
-          // --- Interpolation douce heading ---
+          // Lerp heading
           if (targetHdg !== null) {
-            arc._curHdg = lerpAngle(arc._curHdg, targetHdg, LERP_HDG);
+            arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
           }
 
-          // --- Appliquer position ---
           const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
-
-          // --- Appliquer rotation (heading → radians, 0° = nord) ---
           (sprite.material as THREE.SpriteMaterial).rotation =
-            -(arc._curHdg * Math.PI) / 180;
+            -(arc._curHdg! * Math.PI) / 180;
         });
 
         composer.render();
