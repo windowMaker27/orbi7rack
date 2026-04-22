@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── Tokens dark (défaut) ── */
+:root,
+[data-theme="dark"] {
+  --bg:          #0a0000;
+  --surface:     rgba(10,0,0,0.75);
+  --border:      rgba(255,68,0,0.2);
+  --accent:      #ff6600;
+  --accent-dim:  rgba(255,68,0,0.12);
+  --accent-mid:  rgba(255,68,0,0.3);
+  --text:        #ffffff;
+  --text-muted:  rgba(255,255,255,0.4);
+  --text-faint:  rgba(255,255,255,0.15);
+  --danger:      #ff4444;
+  --success:     #00ff99;
+  --warning:     #ffaa00;
+  --scrollbar:   rgba(255,68,0,0.3);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── Tokens light ── */
+[data-theme="light"] {
+  --bg:          #f0ede8;
+  --surface:     rgba(240,237,232,0.85);
+  --border:      rgba(0,102,204,0.2);
+  --accent:      #0066cc;
+  --accent-dim:  rgba(0,102,204,0.1);
+  --accent-mid:  rgba(0,102,204,0.25);
+  --text:        #1a1a2e;
+  --text-muted:  rgba(26,26,46,0.55);
+  --text-faint:  rgba(26,26,46,0.25);
+  --danger:      #cc2200;
+  --success:     #007a44;
+  --warning:     #b86e00;
+  --scrollbar:   rgba(0,102,204,0.25);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "JetBrains Mono", "Geist Mono", monospace;
+  margin: 0;
+  padding: 0;
 }
+
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }

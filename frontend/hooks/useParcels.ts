@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
 export interface TrackingEvent {
@@ -30,6 +30,7 @@ export interface Parcel {
   updated_at: string;
   events: TrackingEvent[];
   estimated_position: EstimatedPosition | null;
+  flight_number?: string | null;
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -42,7 +43,6 @@ export function useParcels() {
 
   useEffect(() => {
     if (!access) return;
-
     setLoading(true);
     fetch(`${API}/api/parcels/`, {
       headers: { Authorization: `Bearer ${access}` },
@@ -51,12 +51,19 @@ export function useParcels() {
         if (!res.ok) throw new Error("Erreur lors du chargement des colis");
         return res.json();
       })
-      .then(data => {
-        setParcels(Array.isArray(data) ? data : data.results ?? []);
-      })
+      .then(data => setParcels(Array.isArray(data) ? data : data.results ?? []))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [access]);
 
-  return { parcels, setParcels, loading, error };
+  const deleteParcel = useCallback(async (id: number): Promise<void> => {
+    if (!access) return;
+    await fetch(`${API}/api/parcels/${id}/`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${access}` },
+    });
+    setParcels(prev => prev.filter(p => p.id !== id));
+  }, [access]);
+
+  return { parcels, setParcels, loading, error, deleteParcel };
 }

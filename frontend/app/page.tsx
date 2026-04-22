@@ -5,6 +5,9 @@ import { useState, useRef } from "react";
 import AuthGate from "@/components/AuthGate";
 import Sidebar from "@/components/Sidebar";
 import ParcelDetailModal from "@/components/ParcelDetailModal";
+import TopBar from "@/components/TopBar";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useParcels } from "@/hooks/useParcels";
 import { useFlightPositions } from "@/hooks/useFlightPositions";
 import type { Parcel } from "@/hooks/useParcels";
@@ -13,10 +16,10 @@ import type { PositionMode } from "@/hooks/useFlightPositions";
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
 function GlobeWithData() {
-  const { parcels, loading, setParcels } = useParcels();
+  const { theme } = useTheme();
+  const { parcels, loading, setParcels, deleteParcel } = useParcels();
   const { positions: flightPositions, positionMode, setPositionMode } = useFlightPositions(parcels);
 
-  // Ref vers les positions live — mis à jour à chaque render
   const flightPositionsRef = useRef(flightPositions);
   flightPositionsRef.current = flightPositions;
 
@@ -24,17 +27,13 @@ function GlobeWithData() {
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
-    // Utilise flightPositionsRef.current (positions, pas l'objet hook entier)
     const live = flightPositionsRef.current[parcel.id];
     const pos = (live?.source === "live" && live.lat != null && live.lng != null)
       ? { lat: live.lat, lng: live.lng }
       : parcel.estimated_position;
 
     if (pos && globeRef.current) {
-      globeRef.current.pointOfView(
-        { lat: pos.lat, lng: pos.lng, altitude: 1.5 },
-        800
-      );
+      globeRef.current.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 1.5 }, 800);
       globeRef.current.controls().autoRotate = false;
     }
     setSelectedParcel(parcel);
@@ -50,6 +49,11 @@ function GlobeWithData() {
     handleSelectParcel(parcel);
   };
 
+  const handleDeleteParcel = async (id: number) => {
+    await deleteParcel(id);
+    if (selectedParcel?.id === id) handleCloseModal();
+  };
+
   const handleToggleMode = (parcelId: number) => (mode: PositionMode) => {
     setPositionMode(prev => ({ ...prev, [parcelId]: mode }));
   };
@@ -61,20 +65,26 @@ function GlobeWithData() {
         globeRef={globeRef}
         flightPositions={flightPositions}
         positionMode={positionMode}
+        theme={theme}
       />
       <Sidebar
         parcels={parcels}
         loading={loading}
         onSelectParcel={handleSelectParcel}
         onParcelAdded={handleParcelAdded}
+        onDeleteParcel={handleDeleteParcel}
+        theme={theme}
       />
+      <TopBar />
       {selectedParcel && (
         <ParcelDetailModal
           parcel={selectedParcel}
           onClose={handleCloseModal}
+          onDelete={handleDeleteParcel}
           flightPosition={flightPositions[selectedParcel.id]}
           positionMode={positionMode[selectedParcel.id] ?? "arc"}
           onToggleMode={handleToggleMode(selectedParcel.id)}
+          theme={theme}
         />
       )}
     </>
@@ -83,10 +93,12 @@ function GlobeWithData() {
 
 export default function Home() {
   return (
-    <AuthGate>
-      <main style={{ margin: 0, padding: 0, background: "#0a0000" }}>
-        <GlobeWithData />
-      </main>
-    </AuthGate>
+    <ThemeProvider>
+      <AuthGate>
+        <main style={{ margin: 0, padding: 0 }}>
+          <GlobeWithData />
+        </main>
+      </AuthGate>
+    </ThemeProvider>
   );
 }
