@@ -8,12 +8,13 @@ import ParcelDetailModal from "@/components/ParcelDetailModal";
 import { useParcels } from "@/hooks/useParcels";
 import { useFlightPositions } from "@/hooks/useFlightPositions";
 import type { Parcel } from "@/hooks/useParcels";
+import type { PositionMode } from "@/hooks/useFlightPositions";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
 function GlobeWithData() {
   const { parcels, loading, setParcels } = useParcels();
-  const flightPositions = useFlightPositions(parcels);
+  const { positions: flightPositions, positionMode, setPositionMode } = useFlightPositions(parcels);
   const flightPositionsRef = useRef(flightPositions);
   flightPositionsRef.current = flightPositions;
 
@@ -21,7 +22,6 @@ function GlobeWithData() {
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
 
   const handleSelectParcel = (parcel: Parcel) => {
-    // Priorité : position live si disponible, sinon estimated_position DB
     const live = flightPositionsRef.current[parcel.id];
     const pos = (live?.source === "live" && live.lat != null && live.lng != null)
       ? { lat: live.lat, lng: live.lng }
@@ -49,9 +49,18 @@ function GlobeWithData() {
     handleSelectParcel(parcel);
   };
 
+  const handleToggleMode = (parcelId: number) => (mode: PositionMode) => {
+    setPositionMode(prev => ({ ...prev, [parcelId]: mode }));
+  };
+
   return (
     <>
-      <Globe parcels={parcels} globeRef={globeRef} flightPositions={flightPositions} />
+      <Globe
+        parcels={parcels}
+        globeRef={globeRef}
+        flightPositions={flightPositions}
+        positionMode={positionMode}
+      />
       <Sidebar
         parcels={parcels}
         loading={loading}
@@ -62,6 +71,9 @@ function GlobeWithData() {
         <ParcelDetailModal
           parcel={selectedParcel}
           onClose={handleCloseModal}
+          flightPosition={flightPositions[selectedParcel.id]}
+          positionMode={positionMode[selectedParcel.id]}
+          onToggleMode={handleToggleMode(selectedParcel.id)}
         />
       )}
     </>
