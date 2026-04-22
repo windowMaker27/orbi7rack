@@ -1,6 +1,7 @@
 "use client";
 
 import type { Parcel } from "@/hooks/useParcels";
+import type { FlightPosition, PositionMode } from "@/hooks/useFlightPositions";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "En attente",
@@ -29,26 +30,35 @@ const SOURCE_LABELS: Record<string, string> = {
 interface ParcelDetailModalProps {
   parcel: Parcel;
   onClose: () => void;
+  flightPosition?: FlightPosition;
+  positionMode?: PositionMode;
+  onToggleMode?: (mode: PositionMode) => void;
 }
 
-export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModalProps) {
+export default function ParcelDetailModal({
+  parcel,
+  onClose,
+  flightPosition,
+  positionMode,
+  onToggleMode,
+}: ParcelDetailModalProps) {
   const statusColor = STATUS_COLORS[parcel.status] ?? "#fff";
   const pos = parcel.estimated_position;
 
+  // Le switch n'est visible que si on a une position live réelle
+  const showModeSwitch = flightPosition?.source === "live" && onToggleMode != null;
+
   return (
-    // Backdrop — intercepte les clics sans bloquer la vue
     <div
       onClick={onClose}
       style={{
         position: "fixed", inset: 0, zIndex: 200,
-        // Transparent mais capture les clics
         background: "transparent",
         pointerEvents: "auto",
         display: "flex", alignItems: "center", justifyContent: "flex-end",
         paddingRight: 80,
       }}
     >
-      {/* Modal — stoppe la propagation */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -120,6 +130,45 @@ export default function ParcelDetailModal({ parcel, onClose }: ParcelDetailModal
             </div>
           ))}
         </div>
+
+        {/* Mode switch — uniquement si source live */}
+        {showModeSwitch && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "rgba(255,68,0,0.06)",
+            border: "1px solid rgba(255,68,0,0.15)",
+            borderRadius: 8,
+            padding: "8px 12px",
+          }}>
+            <span style={{ color: "#ff440088", fontFamily: "monospace", fontSize: 9, letterSpacing: 2 }}>
+              MODE POSITION
+            </span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {(["arc", "live"] as PositionMode[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => onToggleMode!(m)}
+                  style={{
+                    background: positionMode === m ? "rgba(255,102,0,0.25)" : "transparent",
+                    border: `1px solid ${positionMode === m ? "#ff6600" : "rgba(255,68,0,0.2)"}`,
+                    borderRadius: 4,
+                    color: positionMode === m ? "#ff6600" : "#ff440055",
+                    fontFamily: "monospace",
+                    fontSize: 9,
+                    letterSpacing: 1,
+                    padding: "3px 8px",
+                    cursor: "pointer",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {m === "arc" ? "ARC" : "LIVE"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Position */}
         {pos && (

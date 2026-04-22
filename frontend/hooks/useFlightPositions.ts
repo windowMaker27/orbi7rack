@@ -21,13 +21,23 @@ export interface FlightPosition {
 // Map parcelId -> FlightPosition
 export type FlightPositionMap = Record<number, FlightPosition>;
 
+export type PositionMode = "arc" | "live";
+export type PositionModeMap = Record<number, PositionMode>;
+
 /**
  * Poll /api/parcels/{id}/flight_position/ pour tous les colis en transit.
- * Retourne une map parcelId -> FlightPosition, mise à jour toutes les 30s.
+ * Retourne une map parcelId -> FlightPosition + une map parcelId -> PositionMode.
+ * mode "live"  : coords directes depuis OpenSky/FR24 (source === "live")
+ * mode "arc"   : position interpolée sur l'arc géodésique (source === "simulated")
  */
-export function useFlightPositions(parcels: Parcel[]): FlightPositionMap {
+export function useFlightPositions(parcels: Parcel[]): {
+  positions: FlightPositionMap;
+  positionMode: PositionModeMap;
+  setPositionMode: React.Dispatch<React.SetStateAction<PositionModeMap>>;
+} {
   const { access } = useAuth();
   const [positions, setPositions] = useState<FlightPositionMap>({});
+  const [positionMode, setPositionMode] = useState<PositionModeMap>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const inTransitParcels = parcels.filter(
@@ -48,13 +58,17 @@ export function useFlightPositions(parcels: Parcel[]): FlightPositionMap {
       )
     );
 
-    const next: FlightPositionMap = {};
+    const nextPos: FlightPositionMap = {};
+    const nextMode: PositionModeMap = {};
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) {
-        next[r.value.id] = r.value.data;
+        nextPos[r.value.id]  = r.value.data;
+        nextMode[r.value.id] = r.value.data.source === "live" ? "live" : "arc";
       }
     }
-    setPositions(next);
+    setPositions(nextPos);
+    // Ne pas écraser les overrides manuels — merge en favorisant le state existant
+    setPositionMode(prev => ({ ...nextMode, ...prev }));
   };
 
   useEffect(() => {
@@ -66,5 +80,5 @@ export function useFlightPositions(parcels: Parcel[]): FlightPositionMap {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access, inTransitParcels.length]);
 
-  return positions;
+  return { positions, positionMode, setPositionMode };
 }

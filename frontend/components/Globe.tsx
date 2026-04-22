@@ -4,12 +4,13 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { EffectComposer, EffectPass, RenderPass, BloomEffect } from "postprocessing";
 import type { Parcel } from "@/hooks/useParcels";
-import type { FlightPositionMap } from "@/hooks/useFlightPositions";
+import type { FlightPositionMap, PositionModeMap } from "@/hooks/useFlightPositions";
 
 interface GlobeProps {
   parcels: Parcel[];
   globeRef: React.MutableRefObject<any>;
   flightPositions?: FlightPositionMap;
+  positionMode?: PositionModeMap;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -207,7 +208,7 @@ function lerpAngle(current: number, target: number, t: number): number {
   return current + diff * t;
 }
 
-export default function Globe({ parcels, globeRef, flightPositions = {} }: GlobeProps) {
+export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {} }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const composerRef  = useRef<EffectComposer | null>(null);
   const frameRef     = useRef<number>(0);
@@ -215,10 +216,15 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
   const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef     = useRef<THREE.Scene | null>(null);
   const flightPosRef = useRef<FlightPositionMap>(flightPositions);
+  const positionModeRef = useRef<PositionModeMap>(positionMode);
 
   useEffect(() => {
     flightPosRef.current = flightPositions;
   }, [flightPositions]);
+
+  useEffect(() => {
+    positionModeRef.current = positionMode;
+  }, [positionMode]);
 
   useEffect(() => {
     pendingRef.current = parcels;
@@ -312,6 +318,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
           if (!arc) return;
 
           const livePos = flightPosRef.current[arc.id];
+          const mode    = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
 
           let targetLat: number;
           let targetLng: number;
@@ -319,13 +326,25 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
           let targetHdg: number | null = null;
 
           if (livePos?.lat != null && livePos?.lng != null) {
-            // position renvoyée par l'API (live ou simulée)
-            targetLat = livePos.lat;
-            targetLng = livePos.lng;
             const progress = livePos.progress ?? 0.5;
-            targetAlt = livePos.source === "live"
-              ? Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE)
-              : Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+
+            if (mode === "live") {
+              // Coords directes depuis OpenSky/FR24
+              targetLat = livePos.lat;
+              targetLng = livePos.lng;
+              targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+            } else {
+              // Mode arc : position interpolée sur la géodésique origin→destination
+              const origin = livePos.origin ?? { lat: arc.startLat, lng: arc.startLng };
+              const dest   = livePos.destination ?? { lat: arc.endLat,   lng: arc.endLng };
+              [targetLat, targetLng] = slerpLatLng(
+                origin.lat, origin.lng,
+                dest.lat,   dest.lng,
+                progress
+              );
+              targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+            }
+
             targetHdg = livePos.heading ?? null;
           } else {
             // Pas encore de réponse API : attente au milieu de l'arc
