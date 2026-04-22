@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import type { Parcel } from "@/hooks/useParcels";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const POLL_INTERVAL = 15_000; // 15s
+const POLL_INTERVAL = 30_000; // 30s
 
 export interface FlightPosition {
   lat: number;
@@ -14,6 +14,8 @@ export interface FlightPosition {
   source: "live" | "simulated";
   provider?: string;
   progress?: number;
+  origin?: { lat: number; lng: number };
+  destination?: { lat: number; lng: number };
 }
 
 // Map parcelId -> FlightPosition
@@ -21,7 +23,7 @@ export type FlightPositionMap = Record<number, FlightPosition>;
 
 /**
  * Poll /api/parcels/{id}/flight_position/ pour tous les colis en transit.
- * Retourne une map parcelId -> FlightPosition, mise à jour toutes les 15s.
+ * Retourne une map parcelId -> FlightPosition, mise à jour toutes les 30s.
  */
 export function useFlightPositions(parcels: Parcel[]): FlightPositionMap {
   const { access } = useAuth();

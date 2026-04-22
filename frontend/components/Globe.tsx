@@ -43,6 +43,8 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
 };
 
 const ARC_ALTITUDE = 0.25;
+const LERP_POS     = 0.018; // vitesse interpolation position (~3s pour traverser)
+const LERP_HDG     = 0.06;  // vitesse interpolation heading (~1s)
 
 function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
@@ -132,7 +134,6 @@ function buildTransportArcs(parcels: Parcel[]) {
 
       const emoji = p.status === "out_for_delivery" ? "🚚" : "✈️";
 
-      // tReal : fallback temporel si pas de position live
       const events = (p as any).events ?? [];
       const sortedGeo = [...events]
         .filter((e: any) => e.latitude !== null && e.longitude !== null)
@@ -150,6 +151,11 @@ function buildTransportArcs(parcels: Parcel[]) {
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji,
         tReal,
+        // état interpolé courant (mutated dans la boucle d'animation)
+        _curLat: null as number | null,
+        _curLng: null as number | null,
+        _curAlt: null as number | null,
+        _curHdg: null as number | null,
       };
     }).filter(Boolean);
 }
@@ -200,12 +206,18 @@ function setupTransportSprites(
 ): { sprite: THREE.Sprite; arc: any }[] {
   return transportArcs.map(arc => {
     const texture  = makeIconTexture(arc.emoji);
-    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, rotation: 0 });
     const sprite   = new THREE.Sprite(material);
     sprite.scale.set(8, 8, 1);
     scene.add(sprite);
     return { sprite, arc };
   });
+}
+
+/** Lerp angulaire court-circuit sur [-180, 180] */
+function lerpAngle(current: number, target: number, t: number): number {
+  let diff = ((target - current) % 360 + 540) % 360 - 180;
+  return current + diff * t;
 }
 
 export default function Globe({ parcels, globeRef, flightPositions = {} }: GlobeProps) {
@@ -215,7 +227,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
   const pendingRef   = useRef<Parcel[]>(parcels);
   const spritesRef   = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef     = useRef<THREE.Scene | null>(null);
-  // Toujours à jour dans la boucle d'animation sans re-créer les sprites
   const flightPosRef = useRef<FlightPositionMap>(flightPositions);
 
   useEffect(() => {
@@ -313,29 +324,56 @@ export default function Globe({ parcels, globeRef, flightPositions = {} }: Globe
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
 
-          let lat: number;
-          let lng: number;
-          let alt: number;
-
-          // Priorité 1 : position live OpenSky (toujours vérifiée, peu importe l'état initial)
           const livePos = flightPosRef.current[arc.id];
-          if (livePos && livePos.source === "live" && livePos.lat != null && livePos.lng != null) {
-            lat = livePos.lat;
-            lng = livePos.lng;
-            alt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 0) / 12000) * ARC_ALTITUDE);
+
+          // --- Calcul de la cible ---
+          let targetLat: number;
+          let targetLng: number;
+          let targetAlt: number;
+          let targetHdg: number | null = null;
+
+          if (livePos?.lat != null && livePos?.lng != null) {
+            targetLat = livePos.lat;
+            targetLng = livePos.lng;
+            targetAlt = livePos.source === "live"
+              ? Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE)
+              : Math.sin((livePos.progress ?? 0.5) * Math.PI) * ARC_ALTITUDE;
+            targetHdg = livePos.heading ?? null;
           } else {
-            // Priorité 2 : interpolation SLERP sur la route
-            const t = livePos?.progress ?? arc.tReal ?? 0.5;
-            [lat, lng] = slerpLatLng(
+            const t = arc.tReal ?? 0.5;
+            [targetLat, targetLng] = slerpLatLng(
               arc.startLat, arc.startLng,
               arc.endLat,   arc.endLng,
               t
             );
-            alt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
+            targetAlt = Math.sin(t * Math.PI) * ARC_ALTITUDE;
           }
 
-          const coords = globe.getCoords(lat, lng, alt);
+          // --- Initialisation au premier frame ---
+          if (arc._curLat === null) {
+            arc._curLat = targetLat;
+            arc._curLng = targetLng;
+            arc._curAlt = targetAlt;
+            arc._curHdg = targetHdg ?? 0;
+          }
+
+          // --- Interpolation douce position ---
+          arc._curLat += (targetLat - arc._curLat) * LERP_POS;
+          arc._curLng += (targetLng - arc._curLng) * LERP_POS;
+          arc._curAlt += (targetAlt - arc._curAlt) * LERP_POS;
+
+          // --- Interpolation douce heading ---
+          if (targetHdg !== null) {
+            arc._curHdg = lerpAngle(arc._curHdg, targetHdg, LERP_HDG);
+          }
+
+          // --- Appliquer position ---
+          const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
+
+          // --- Appliquer rotation (heading → radians, 0° = nord) ---
+          (sprite.material as THREE.SpriteMaterial).rotation =
+            -(arc._curHdg * Math.PI) / 180;
         });
 
         composer.render();
