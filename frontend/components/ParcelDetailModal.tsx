@@ -45,9 +45,9 @@ export default function ParcelDetailModal({
   const statusColor = STATUS_COLORS[parcel.status] ?? "#fff";
   const pos = parcel.estimated_position;
 
-  // Switch visible UNIQUEMENT si l'API a renvoyé une position live réelle
   const showModeSwitch = flightPosition?.source === "live" && onToggleMode != null;
   const activeMode: PositionMode = positionMode ?? "arc";
+  const isStale = flightPosition?.stale === true;
 
   return (
     <div
@@ -132,7 +132,30 @@ export default function ParcelDetailModal({
           ))}
         </div>
 
-        {/* Switch ARC / LIVE — uniquement si position live disponible */}
+        {/* Bannière stale — OpenSky rate-limité */}
+        {isStale && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "rgba(255,170,0,0.08)",
+            border: "1px solid rgba(255,170,0,0.25)",
+            borderRadius: 8,
+            padding: "7px 12px",
+          }}>
+            <span style={{ fontSize: 13 }}>⚠️</span>
+            <div>
+              <div style={{ color: "#ffaa00", fontFamily: "monospace", fontSize: 9, letterSpacing: 1, fontWeight: "bold" }}>
+                SIGNAL PERDU
+              </div>
+              <div style={{ color: "#ffaa0099", fontFamily: "monospace", fontSize: 9, marginTop: 2 }}>
+                Dernière position connue affichée — OpenSky indisponible
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Switch ARC / LIVE */}
         {showModeSwitch && (
           <div style={{
             display: "flex",
@@ -179,13 +202,19 @@ export default function ParcelDetailModal({
         {flightPosition && (
           <div style={{
             background: "rgba(255,68,0,0.05)",
-            border: "1px solid rgba(255,68,0,0.12)",
+            border: `1px solid ${isStale ? "rgba(255,170,0,0.2)" : "rgba(255,68,0,0.12)"}`,
             borderRadius: 8, padding: "8px 12px",
           }}>
             <div style={{ color: "#ff440055", fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 4 }}>
-              POSITION {flightPosition.source === "live" ? "🟢 LIVE" : "⏳ SIMULÉE"}
+              POSITION{
+                isStale
+                  ? " 🟡 CACHE"
+                  : flightPosition.source === "live"
+                  ? " 🟢 LIVE"
+                  : " ⏳ SIMULÉE"
+              }
             </div>
-            <div style={{ color: "#ff6600", fontFamily: "monospace", fontSize: 11 }}>
+            <div style={{ color: isStale ? "#ffaa00" : "#ff6600", fontFamily: "monospace", fontSize: 11 }}>
               {flightPosition.lat.toFixed(4)}, {flightPosition.lng.toFixed(4)}
             </div>
             {flightPosition.altitude != null && (
