@@ -1,5 +1,7 @@
 """
-Seed de données de démo — 4 colis sur différents continents + 1 colis live SQ335
+Seed de données de démo — 4 colis sur différents continents + 2 colis live
+  - DEMO-LIVE-SQ335 : Paris CDG → Singapore Changi (atterri)
+  - DEMO-LIVE-UA984 : Paris CDG → San Francisco SFO (en vol, décollage 07:21 UTC)
 Crée automatiquement un superuser admin/admin si inexistant.
 Usage : docker compose exec backend python scripts/seed_demo.py
         ou : make seed-demo
@@ -212,6 +214,54 @@ SEED_DATA = [
             },
             {
                 "timestamp": dt("2026-04-20T10:00:00"),
+                "location": "Paris CDG - Fret",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Customs cleared",
+                "description": "Dédouanement export validé à Paris",
+            },
+        ],
+    },
+    # --- Colis LIVE lié au vol UA984 (Paris CDG → San Francisco SFO) ---
+    # Boeing 787-9 United Airlines, ~11h de vol
+    # Décollage réel : 22 avril 2026 à 07:21 UTC (09:21 CEST)
+    {
+        "parcel": {
+            "tracking_number": "DEMO-LIVE-UA984",
+            "carrier": "United Airlines Cargo",
+            "description": "Équipements optiques [LIVE]",
+            "origin_country": "FR",
+            "dest_country": "US",
+            "status": "in_transit",
+            "flight_number": "UA984",
+        },
+        "events": [
+            {
+                "timestamp": dt("2026-04-22T18:30:00"),
+                "location": "San Francisco International Airport",
+                "latitude": 37.6213,
+                "longitude": -122.3790,
+                "status": "Expected arrival",
+                "description": "Arrivée prévue à SFO — ~11h de vol depuis CDG",
+            },
+            {
+                "timestamp": dt("2026-04-22T07:21:00"),
+                "location": "Paris Charles de Gaulle",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Departed on flight UA984",
+                "description": "Départ de Paris CDG sur le vol UA984 (Boeing 787-9 Dreamliner)",
+            },
+            {
+                "timestamp": dt("2026-04-22T04:00:00"),
+                "location": "Paris CDG - Fret",
+                "latitude": 49.0097,
+                "longitude": 2.5479,
+                "status": "Loaded on aircraft",
+                "description": "Chargé en soute sur le Boeing 787-9",
+            },
+            {
+                "timestamp": dt("2026-04-21T20:00:00"),
                 "location": "Paris CDG - Fret",
                 "latitude": 49.0097,
                 "longitude": 2.5479,
