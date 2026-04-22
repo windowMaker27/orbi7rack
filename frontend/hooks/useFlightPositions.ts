@@ -16,6 +16,8 @@ export interface FlightPosition {
   progress?: number;
   origin?: { lat: number; lng: number };
   destination?: { lat: number; lng: number };
+  /** true si la position vient du cache local (OpenSky indisponible) */
+  stale?: boolean;
 }
 
 export type FlightPositionMap = Record<number, FlightPosition>;
@@ -29,9 +31,10 @@ export function useFlightPositions(parcels: Parcel[]): {
 } {
   const { access } = useAuth();
   const [positions, setPositions] = useState<FlightPositionMap>({});
-  // overrides manuels : seulement les parcelIds où l'user a cliqué
   const [modeOverrides, setModeOverrides] = useState<PositionModeMap>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Cache de la dernière position live valide par parcelId
+  const lastLiveRef = useRef<FlightPositionMap>({});
 
   const inTransitParcels = parcels.filter(
     p => p.status === "in_transit" || p.status === "out_for_delivery"
@@ -51,13 +54,29 @@ export function useFlightPositions(parcels: Parcel[]): {
       )
     );
 
-    const nextPos: FlightPositionMap = {};
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        nextPos[r.value.id] = r.value.data;
+    setPositions(prev => {
+      const next: FlightPositionMap = { ...prev };
+
+      for (const r of results) {
+        if (r.status !== "fulfilled" || !r.value) continue;
+        const { id, data } = r.value;
+
+        if (data.source === "live" && data.lat != null && data.lng != null) {
+          // Nouvelle position live valide → on met à jour le cache
+          lastLiveRef.current[id] = { ...data, stale: false };
+          next[id] = lastLiveRef.current[id];
+        } else if (lastLiveRef.current[id]) {
+          // API répond mais pas de live (rate-limit, simulated…)
+          // → on garde la dernière position live connue, marquée stale
+          next[id] = { ...lastLiveRef.current[id], stale: true };
+        } else {
+          // Jamais eu de live → on prend ce que l'API donne (simulated/fallback)
+          next[id] = data;
+        }
       }
-    }
-    setPositions(nextPos);
+
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -67,7 +86,7 @@ export function useFlightPositions(parcels: Parcel[]): {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access, inTransitParcels.length]);
 
-  // positionMode = override manuel si présent, sinon dérivé de source API
+  // positionMode dérivé de source (ou override manuel)
   const positionMode: PositionModeMap = {};
   for (const [idStr, pos] of Object.entries(positions)) {
     const id = Number(idStr);
