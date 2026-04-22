@@ -51,6 +51,16 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
+// Palettes hex : index par feature.id pour garder des couleurs stables par pays
+const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+const HEX_PALETTE_LIGHT = ["#0044aa","#0066cc","#1177dd","#2255bb","#3388ee","#0055bb","#1166cc","#0077dd"];
+
+// Couleur stable par pays : on hache l'index de la feature dans la palette
+function stableHexColor(featureIndex: number, isDark: boolean): string {
+  const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
+  return palette[featureIndex % palette.length];
+}
+
 function getCentroid(code: string): [number, number] | null {
   return ISO2_CENTROIDS[code?.toUpperCase()] ?? null;
 }
@@ -87,9 +97,6 @@ function lerpAngle(current:number,target:number,t:number):number{
   const diff=((target-current)%360+540)%360-180;
   return current+diff*t;
 }
-
-const HEX_COLORS_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#ffcc00"];
-const HEX_COLORS_LIGHT = ["#0055aa","#0066cc","#1177dd","#3388ee","#2266bb"];
 
 function buildData(parcels:Parcel[], isDark:boolean){
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
@@ -129,6 +136,7 @@ function buildData(parcels:Parcel[], isDark:boolean){
         endLat:dest.lat,endLng:dest.lng,
         color:SC[p.status]??"#fff",
         emoji:p.status==="out_for_delivery"?"🚚":"✈️",
+        // Init à null → sera initialisé à la position milieu, pas au target
         _curLat:null as number|null,_curLng:null as number|null,
         _curAlt:null as number|null,_curHdg:null as number|null,
       };
@@ -138,9 +146,7 @@ function buildData(parcels:Parcel[], isDark:boolean){
 }
 
 function applyData(globe:any, parcels:Parcel[], isDark:boolean){
-  const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const {points,arcs,rings}=buildData(parcels,isDark);
-  const hexColors = isDark ? HEX_COLORS_DARK : HEX_COLORS_LIGHT;
 
   globe
     .pointsData(points)
@@ -168,49 +174,54 @@ function applyData(globe:any, parcels:Parcel[], isDark:boolean){
     .ringLat((d:any)=>d.lat).ringLng((d:any)=>d.lng)
     .ringColor((d:any)=>(t:number)=>`${d.color}${Math.round((1-t)*255).toString(16).padStart(2,"00")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
+}
 
-  // Réappliquer hexPolygonColor au changement de thème
-  globe.hexPolygonColor(()=>hexColors[Math.floor(Math.random()*hexColors.length)]);
+function applyHexColors(globe:any, isDark:boolean){
+  // On passe l'index via __featureIndex stocké sur la feature lors du premier chargement
+  globe.hexPolygonColor((feat:any) => {
+    const idx: number = feat.__hexIdx ?? 0;
+    return stableHexColor(idx, isDark);
+  });
 }
 
 function applyTheme(globe:any, scene:THREE.Scene, isDark:boolean){
-  // Atmosphere + globe material
   globe
-    .atmosphereColor(isDark ? "#ff4400" : "#0066cc")
+    .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
     .globeMaterial(new THREE.MeshPhongMaterial({
       color:    new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-      emissive: new THREE.Color(isDark ? "#1a0000" : "#c8dcea"),
+      emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
       transparent: true, opacity: 0.95,
     }));
 
-  // Grille (graticules)
+  // Graticules
   setTimeout(()=>{
     scene.traverse((obj:any)=>{
       if(obj.isLine||obj.isLineSegments){
-        obj.material=new THREE.LineBasicMaterial({
-          color: new THREE.Color(isDark ? "#ff2200" : "#0044aa"),
-          transparent: true, opacity: 0.3,
+        if(obj.material) obj.material = new THREE.LineBasicMaterial({
+          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+          transparent: true, opacity: 0.25,
         });
       }
     });
   }, 50);
 
-  // Lumières : vider les anciennes, ajouter les nouvelles
+  // Lumières : supprimer les anciennes, ajouter les nouvelles
   const toRemove: THREE.Object3D[] = [];
-  scene.traverse((obj:any)=>{
-    if(obj.isAmbientLight||obj.isDirectionalLight) toRemove.push(obj);
-  });
+  scene.traverse((obj:any)=>{ if(obj.isAmbientLight||obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l=>scene.remove(l));
 
   if(isDark){
-    scene.add(new THREE.AmbientLight(0xff4400, 0.4));
-    const dir=new THREE.DirectionalLight(0xff8800, 1.2);
+    // Lumière neutre en base + directionnelle chaude subtile (évite la saturation rouge)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    const dir = new THREE.DirectionalLight(0xff9944, 0.8);
     dir.position.set(1,1,1); scene.add(dir);
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir=new THREE.DirectionalLight(0xaaccff, 1.0);
+    const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
     dir.position.set(1,1,1); scene.add(dir);
   }
+
+  applyHexColors(globe, isDark);
 }
 
 function setupSprites(scene:THREE.Scene, transport:any[]):{ sprite:THREE.Sprite; arc:any }[]{
@@ -234,12 +245,13 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
+  // Préserver les positions courantes des sprites entre les re-renders
+  const spriteStateRef  = useRef<Map<number,{lat:number;lng:number;alt:number;hdg:number}>>(new Map());
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
   themeRef.current        = theme;
 
-  // Quand les colis ou le thème changent → on réapplique données + thème complet
   useEffect(()=>{
     pendingRef.current = parcels;
     if(!globeRef.current) return;
@@ -247,18 +259,30 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
     applyData(globeRef.current, parcels, isDark);
     if(sceneRef.current){
       applyTheme(globeRef.current, sceneRef.current, isDark);
+      // Recréer les sprites en préservant les positions courantes
+      const prevState = spriteStateRef.current;
       spritesRef.current.forEach(({sprite})=>sceneRef.current!.remove(sprite));
-      spritesRef.current = setupSprites(sceneRef.current, buildData(parcels, isDark).transport as any[]);
+      const newTransport = buildData(parcels, isDark).transport as any[];
+      // Réinjecter les positions sauvegardées pour éviter la téléportation
+      newTransport.forEach((arc:any)=>{
+        const saved = prevState.get(arc.id);
+        if(saved){
+          arc._curLat = saved.lat;
+          arc._curLng = saved.lng;
+          arc._curAlt = saved.alt;
+          arc._curHdg = saved.hdg;
+        }
+      });
+      spritesRef.current = setupSprites(sceneRef.current, newTransport);
     }
-    // Bloom
     if(composerRef.current){
       const passes = (composerRef.current as any).passes as any[];
       const effectPass = passes.find((p:any)=>p instanceof EffectPass);
       if(effectPass){
         const bloom = (effectPass as any).effects?.find((e:any)=>e instanceof BloomEffect);
         if(bloom){
-          bloom.intensity = isDark ? 1.8 : 0.6;
-          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.1 : 0.3;
+          bloom.intensity = isDark ? 1.6 : 0.5;
+          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.15 : 0.35;
         }
       }
     }
@@ -268,11 +292,13 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
     if(!containerRef.current)return;
     const init=async()=>{
       const isDark=themeRef.current==="dark";
-      const hexColors = isDark ? HEX_COLORS_DARK : HEX_COLORS_LIGHT;
       const [{default:GlobeGL},countries]=await Promise.all([
         import("globe.gl"),
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r=>r.json()),
       ]);
+
+      // Stocker l'index stable sur chaque feature une seule fois
+      countries.features.forEach((f:any, i:number)=>{ f.__hexIdx = i; });
 
       const globe=(GlobeGL as any)(
         {animateIn:true,rendererConfig:{antialias:true,alpha:true}}
@@ -281,17 +307,17 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
         .showGraticules(true)
-        .atmosphereColor(isDark?"#ff4400":"#0066cc")
+        .atmosphereColor(isDark?"#ff6600":"#0066cc")
         .atmosphereAltitude(0.12)
         .globeMaterial(new THREE.MeshPhongMaterial({
           color:new THREE.Color(isDark?"#0d0000":"#dde8f0"),
-          emissive:new THREE.Color(isDark?"#1a0000":"#c8dcea"),
+          emissive:new THREE.Color(isDark?"#0a0000":"#c8dcea"),
           transparent:true,opacity:0.95,
         }))
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
-        .hexPolygonColor(()=>hexColors[Math.floor(Math.random()*hexColors.length)])
+        .hexPolygonColor((feat:any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
@@ -299,12 +325,12 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
       sceneRef.current=scene;
 
       if(isDark){
-        scene.add(new THREE.AmbientLight(0xff4400,0.4));
-        const dir=new THREE.DirectionalLight(0xff8800,1.2);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+        const dir=new THREE.DirectionalLight(0xff9944, 0.8);
         dir.position.set(1,1,1);scene.add(dir);
       } else {
-        scene.add(new THREE.AmbientLight(0xffffff,0.7));
-        const dir=new THREE.DirectionalLight(0xaaccff,1.0);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dir=new THREE.DirectionalLight(0xaaccff, 1.0);
         dir.position.set(1,1,1);scene.add(dir);
       }
 
@@ -314,9 +340,9 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
       setTimeout(()=>{
         scene.traverse((obj:any)=>{
           if(obj.isLine||obj.isLineSegments){
-            obj.material=new THREE.LineBasicMaterial({
-              color:new THREE.Color(isDark?"#ff2200":"#0044aa"),
-              transparent:true,opacity:0.3,
+            if(obj.material) obj.material=new THREE.LineBasicMaterial({
+              color:new THREE.Color(isDark?"#993300":"#0044aa"),
+              transparent:true,opacity:0.25,
             });
           }
         });
@@ -324,7 +350,17 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
 
       globeRef.current=globe;
       applyData(globe,pendingRef.current,isDark);
-      spritesRef.current=setupSprites(scene,buildData(pendingRef.current,isDark).transport as any[]);
+
+      const transport = buildData(pendingRef.current, isDark).transport as any[];
+      // Bug fix : init _curLat au milieu de l'arc, pas au target → pas de téléportation
+      transport.forEach((arc:any)=>{
+        const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+        arc._curLat = midLat;
+        arc._curLng = midLng;
+        arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
+        arc._curHdg = 0;
+      });
+      spritesRef.current=setupSprites(scene, transport);
 
       const renderer=globe.renderer() as THREE.WebGLRenderer;
       const camera=globe.camera() as THREE.Camera;
@@ -332,8 +368,8 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
       const composer=new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene,camera));
       composer.addPass(new EffectPass(camera,new BloomEffect({
-        intensity:isDark?1.8:0.6,
-        luminanceThreshold:isDark?0.1:0.3,
+        intensity:isDark?1.6:0.5,
+        luminanceThreshold:isDark?0.15:0.35,
         luminanceSmoothing:0.4,mipmapBlur:true,
       })));
       composerRef.current=composer;
@@ -351,7 +387,12 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
           let targetHdg:number|null=null;
 
           if(livePos?.lat!=null&&livePos?.lng!=null){
-            const progress=livePos.progress??0.5;
+            // Clamp progress entre 0.05 et 0.95 pour éviter les positions extrêmes
+            const rawProgress = livePos.progress;
+            const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
+              ? Math.max(0.05, Math.min(0.95, rawProgress))
+              : 0.5;
+
             if(mode==="live"){
               targetLat=livePos.lat;targetLng=livePos.lng;
               targetAlt=Math.min(ARC_ALTITUDE,((livePos.altitude??10000)/12000)*ARC_ALTITUDE);
@@ -367,12 +408,17 @@ export default function Globe({parcels,globeRef,flightPositions={},positionMode=
             targetAlt=Math.sin(0.5*Math.PI)*ARC_ALTITUDE;
           }
 
-          if(arc._curLat===null){arc._curLat=targetLat;arc._curLng=targetLng;arc._curAlt=targetAlt;arc._curHdg=targetHdg??0;}
-
-          arc._curLat+=(targetLat-arc._curLat)*LERP_POS;
-          arc._curLng+=(targetLng-arc._curLng)*LERP_POS;
-          arc._curAlt+=(targetAlt-arc._curAlt)*LERP_POS;
+          // _curLat déjà initialisé au milieu → plus de téléportation au 1er frame
+          arc._curLat!+=(targetLat-arc._curLat!)*LERP_POS;
+          arc._curLng!+=(targetLng-arc._curLng!)*LERP_POS;
+          arc._curAlt!+=(targetAlt-arc._curAlt!)*LERP_POS;
           if(targetHdg!==null)arc._curHdg=lerpAngle(arc._curHdg!,targetHdg,LERP_HDG);
+
+          // Sauvegarder la position courante pour le prochain re-render
+          spriteStateRef.current.set(arc.id, {
+            lat: arc._curLat!, lng: arc._curLng!,
+            alt: arc._curAlt!, hdg: arc._curHdg!,
+          });
 
           const coords=globe.getCoords(arc._curLat,arc._curLng,arc._curAlt);
           sprite.position.set(coords.x,coords.y,coords.z);
