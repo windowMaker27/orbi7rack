@@ -2,7 +2,7 @@
 Usage:
   python manage.py seed_demo
   python manage.py seed_demo --user admin
-  python manage.py seed_demo --reset   # supprime et recrée
+  python manage.py seed_demo --reset   # supprime et recéé
 
 Ajoute un colis démo lié au vol AF6728 (CDG -> PEK).
 Idempotent : ne crée pas de doublon si le tracking number existe déjà.
@@ -97,8 +97,8 @@ class Command(BaseCommand):
             tracking_number=TRACKING_NUMBER,
             carrier="Air France Cargo",
             description="[DEMO] Colis suivi sur vol AF6728",
-            origin_country="France",
-            dest_country="Chine",
+            origin_country="FR",   # ISO-2 obligatoire pour _country_centroid()
+            dest_country="CN",     # ISO-2 obligatoire pour _country_centroid()
             status=Parcel.Status.IN_TRANSIT,
             owner=owner,
             flight_number="AF6728",
