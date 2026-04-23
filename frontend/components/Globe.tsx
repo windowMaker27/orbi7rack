@@ -238,8 +238,8 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
 }
 
 /**
- * Force globe.gl to re-evaluate hex colors by re-setting both the color
- * callback AND re-passing the existing data array (new ref = redraw triggered).
+ * Force globe.gl to re-evaluate hex colors by re-passing the data array.
+ * globe.pauseAnimation() ensures this never triggers a raw render outside the composer.
  */
 function refreshHexColors(globe: any, isDark: boolean) {
   const currentData: any[] = globe.hexPolygonsData() ?? [];
@@ -330,7 +330,6 @@ function applyTheme(
     dir.position.set(1, 1, 1); scene.add(dir);
   }
 
-  // Force globe.gl to redraw hex polygons with updated colors
   refreshHexColors(globe, isDark);
 }
 
@@ -429,6 +428,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
+
+      // Stop globe.gl's internal RAF — our composer owns the render loop entirely.
+      // Without this, hexPolygonsData([...]) triggers a raw render bypassing postprocessing.
+      globe.pauseAnimation();
 
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
