@@ -2,9 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { EffectComposer, EffectPass, RenderPass, BloomEffect } from "postprocessing";
 import type { Parcel } from "@/hooks/useParcels";
 import type { FlightPositionMap, PositionModeMap } from "@/hooks/useFlightPositions";
 import type { Theme } from "@/context/ThemeContext";
@@ -56,16 +54,9 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
 const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
-const GLOBE_RADIUS = 100;
 
-const HEX_PALETTE_DARK = [
-  "#ff4400", "#ff5500", "#ff6600", "#ff7700",
-  "#ff8800", "#ff9900", "#ffaa00", "#ee3300",
-];
-const HEX_PALETTE_LIGHT = [
-  "#003399","#0055ff","#0088cc","#0099dd",
-  "#0033cc","#0066ff","#2277cc","#1a44bb",
-];
+const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+const HEX_PALETTE_LIGHT = ["#0044aa","#0066cc","#1177dd","#2255bb","#3388ee","#0055bb","#1166cc","#0077dd"];
 
 function stableHexColor(featureIndex: number, isDark: boolean): string {
   const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
@@ -245,101 +236,48 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
 }
 
-function refreshHexColors(globe: any, isDark: boolean) {
-  const currentData: any[] = globe.hexPolygonsData() ?? [];
-  globe
-    .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
-    .hexPolygonsData([...currentData]);
-}
-
-function buildManualGraticule(isDark: boolean): THREE.LineSegments {
-  const r = GLOBE_RADIUS + 0.2;
-  const toRad = (d: number) => d * Math.PI / 180;
-  const vertices: number[] = [];
-  const SEGMENTS = 64;
-
-  for (let lng = -180; lng < 180; lng += 10) {
-    const l = toRad(lng);
-    for (let i = 0; i < SEGMENTS; i++) {
-      const lat1 = -90 + (180 * i) / SEGMENTS;
-      const lat2 = -90 + (180 * (i + 1)) / SEGMENTS;
-      const f1 = toRad(lat1), f2 = toRad(lat2);
-      vertices.push(
-        r * Math.cos(f1) * Math.cos(l), r * Math.sin(f1), r * Math.cos(f1) * Math.sin(l),
-        r * Math.cos(f2) * Math.cos(l), r * Math.sin(f2), r * Math.cos(f2) * Math.sin(l),
-      );
-    }
-  }
-
-  for (let lat = -80; lat <= 80; lat += 10) {
-    const f = toRad(lat);
-    for (let i = 0; i < SEGMENTS; i++) {
-      const lng1 = -180 + (360 * i) / SEGMENTS;
-      const lng2 = -180 + (360 * (i + 1)) / SEGMENTS;
-      const l1 = toRad(lng1), l2 = toRad(lng2);
-      vertices.push(
-        r * Math.cos(f) * Math.cos(l1), r * Math.sin(f), r * Math.cos(f) * Math.sin(l1),
-        r * Math.cos(f) * Math.cos(l2), r * Math.sin(f), r * Math.cos(f) * Math.sin(l2),
-      );
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  const mat = new THREE.LineBasicMaterial({
-    color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
-    transparent: true,
-    opacity: isDark ? 0.45 : 0.25,
+function applyHexColors(globe: any, isDark: boolean) {
+  globe.hexPolygonColor((feat: any) => {
+    const idx: number = feat.__hexIdx ?? 0;
+    return stableHexColor(idx, isDark);
   });
-  return new THREE.LineSegments(geo, mat);
 }
 
-function updateManualGraticule(graticule: THREE.LineSegments, isDark: boolean) {
-  const mat = graticule.material as THREE.LineBasicMaterial;
-  mat.color.set(isDark ? "#ff6600" : "#0066cc");
-  mat.opacity = isDark ? 0.45 : 0.25;
-  mat.needsUpdate = true;
-}
+function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
+  globe
+    .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
+    .globeMaterial(new THREE.MeshPhongMaterial({
+      color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
+      emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+      transparent: true, opacity: 0.95,
+    }));
 
-function applyTheme(
-  globe: any,
-  scene: THREE.Scene,
-  globeMat: THREE.MeshPhongMaterial,
-  graticule: THREE.LineSegments,
-  bloomPass: UnrealBloomPass,
-  renderer: THREE.WebGLRenderer,
-  isDark: boolean,
-) {
-  globeMat.color.set(isDark ? "#110000" : "#dde8f0");
-  globeMat.emissive.set(isDark ? "#1a0400" : "#b0c8d8");
-  globeMat.emissiveIntensity = 0.6;
-  globeMat.needsUpdate = true;
-
-  globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
-  updateManualGraticule(graticule, isDark);
-
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
-
-  bloomPass.strength  = isDark ? 0.7  : 0.08;
-  bloomPass.threshold = isDark ? 0.15 : 0.85;
-  bloomPass.radius    = isDark ? 0.4  : 0.6;
+  setTimeout(() => {
+    scene.traverse((obj: any) => {
+      if (obj.isLine || obj.isLineSegments) {
+        if (obj.material) obj.material = new THREE.LineBasicMaterial({
+          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+          transparent: true, opacity: 0.25,
+        });
+      }
+    });
+  }, 50);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const dir = new THREE.DirectionalLight(0xff5500, 0.6);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    const dir = new THREE.DirectionalLight(0xff9944, 0.8);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const dir = new THREE.DirectionalLight(0xaaccff, 0.8);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
     dir.position.set(1, 1, 1); scene.add(dir);
   }
 
-  refreshHexColors(globe, isDark);
+  applyHexColors(globe, isDark);
 }
 
 function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
@@ -356,14 +294,10 @@ function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Spr
 export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {}, theme = "dark" }: GlobeProps) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const composerRef     = useRef<EffectComposer | null>(null);
-  const bloomPassRef    = useRef<UnrealBloomPass | null>(null);
-  const rendererRef     = useRef<THREE.WebGLRenderer | null>(null);
-  const rafRef          = useRef<number>(0);
+  const frameRef        = useRef<number>(0);
   const pendingRef      = useRef<Parcel[]>(parcels);
   const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef        = useRef<THREE.Scene | null>(null);
-  const globeMatRef     = useRef<THREE.MeshPhongMaterial | null>(null);
-  const graticuleRef    = useRef<THREE.LineSegments | null>(null);
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
@@ -373,30 +307,43 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   positionModeRef.current = positionMode;
   themeRef.current        = theme;
 
+  // Re-render arc + points quand parcels OU flightPositions changent
   useEffect(() => {
     pendingRef.current = parcels;
-    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current || !bloomPassRef.current || !rendererRef.current) return;
+    if (!globeRef.current) return;
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
-    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, rendererRef.current, isDark);
-
-    const prevState = spriteStateRef.current;
-    spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-    const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
-    newTransport.forEach((arc: any) => {
-      const saved = prevState.get(arc.id);
-      if (saved) {
-        arc._curLat = saved.lat; arc._curLng = saved.lng;
-        arc._curAlt = saved.alt; arc._curHdg = saved.hdg;
+    if (sceneRef.current) {
+      applyTheme(globeRef.current, sceneRef.current, isDark);
+      const prevState = spriteStateRef.current;
+      spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
+      const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
+      newTransport.forEach((arc: any) => {
+        const saved = prevState.get(arc.id);
+        if (saved) {
+          arc._curLat = saved.lat;
+          arc._curLng = saved.lng;
+          arc._curAlt = saved.alt;
+          arc._curHdg = saved.hdg;
+        }
+      });
+      spritesRef.current = setupSprites(sceneRef.current, newTransport);
+    }
+    if (composerRef.current) {
+      const passes = (composerRef.current as any).passes as any[];
+      const effectPass = passes.find((p: any) => p instanceof EffectPass);
+      if (effectPass) {
+        const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
+        if (bloom) {
+          bloom.intensity = isDark ? 1.6 : 0.5;
+          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.15 : 0.35;
+        }
       }
-    });
-    spritesRef.current = setupSprites(sceneRef.current, newTransport);
+    }
   }, [parcels, theme, globeRef, flightPositions]);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    let destroyed = false;
-
     const init = async () => {
       const isDark = themeRef.current === "dark";
       const [{ default: GlobeGL }, countries] = await Promise.all([
@@ -404,28 +351,22 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
 
-      if (destroyed || !containerRef.current) return;
-
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
 
-      const globeMat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(isDark ? "#110000" : "#dde8f0"),
-        emissive: new THREE.Color(isDark ? "#1a0400" : "#b0c8d8"),
-        emissiveIntensity: 0.6,
-        transparent: true, opacity: 0.95,
-      });
-      globeMatRef.current = globeMat;
-
       const globe = (GlobeGL as any)(
-        { animateIn: true, rendererConfig: { antialias: true, alpha: false } }
+        { animateIn: false, rendererConfig: { antialias: true, alpha: true } }
       )(containerRef.current)
-        .width(containerRef.current.clientWidth)
-        .height(containerRef.current.clientHeight)
-        .backgroundColor(isDark ? "#000000" : "#ffffff")
-        .showGraticules(false)
+        .width(containerRef.current!.clientWidth)
+        .height(containerRef.current!.clientHeight)
+        .backgroundColor("rgba(0,0,0,0)")
+        .showGraticules(true)
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
         .atmosphereAltitude(0.12)
-        .globeMaterial(globeMat)
+        .globeMaterial(new THREE.MeshPhongMaterial({
+          color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
+          emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+          transparent: true, opacity: 0.95,
+        }))
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
@@ -433,33 +374,32 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
-      const renderer = globe.renderer() as THREE.WebGLRenderer;
-      const camera   = globe.camera() as THREE.Camera;
-      const scene    = globe.scene() as THREE.Scene;
-
-      // Stocker dans les refs AVANT le cleanup pour éviter le ReferenceError
-      rendererRef.current = renderer;
-      sceneRef.current    = scene;
-
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
-
-      const graticule = buildManualGraticule(isDark);
-      scene.add(graticule);
-      graticuleRef.current = graticule;
+      const scene = globe.scene() as THREE.Scene;
+      sceneRef.current = scene;
 
       if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-        const dir = new THREE.DirectionalLight(0xff5500, 0.6);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+        const dir = new THREE.DirectionalLight(0xff9944, 0.8);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-        const dir = new THREE.DirectionalLight(0xaaccff, 0.8);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
         dir.position.set(1, 1, 1); scene.add(dir);
       }
 
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
+
+      setTimeout(() => {
+        scene.traverse((obj: any) => {
+          if (obj.isLine || obj.isLineSegments) {
+            if (obj.material) obj.material = new THREE.LineBasicMaterial({
+              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+              transparent: true, opacity: 0.25,
+            });
+          }
+        });
+      }, 500);
 
       globeRef.current = globe;
       applyData(globe, pendingRef.current, isDark, flightPosRef.current);
@@ -467,36 +407,28 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const transport = buildData(pendingRef.current, isDark, flightPosRef.current).transport as any[];
       transport.forEach((arc: any) => {
         const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-        arc._curLat = midLat; arc._curLng = midLng;
+        arc._curLat = midLat;
+        arc._curLng = midLng;
         arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
         arc._curHdg = 0;
       });
       spritesRef.current = setupSprites(scene, transport);
 
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+      const renderer = globe.renderer() as THREE.WebGLRenderer;
+      const camera = globe.camera() as THREE.Camera;
+
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
-      const bloom = new UnrealBloomPass(
-        new THREE.Vector2(w, h),
-        isDark ? 0.7  : 0.08,
-        isDark ? 0.4  : 0.6,
-        isDark ? 0.15 : 0.85,
-      );
-      composer.addPass(bloom);
-      bloomPassRef.current = bloom;
-      composerRef.current  = composer;
+      composer.addPass(new EffectPass(camera, new BloomEffect({
+        intensity: isDark ? 1.6 : 0.5,
+        luminanceThreshold: isDark ? 0.15 : 0.35,
+        luminanceSmoothing: 0.4, mipmapBlur: true,
+      })));
+      composerRef.current = composer;
 
-      // Stopper la loop interne de globe.gl pour prendre le contrôle total
-      renderer.setAnimationLoop(null);
-
-      const controls = globe.controls();
-
-      const tick = () => {
-        if (destroyed) return;
-        rafRef.current = requestAnimationFrame(tick);
-
-        controls.update();
+      const animate = () => {
+        frameRef.current = requestAnimationFrame(animate);
+        globe.controls().update();
 
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
@@ -548,9 +480,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         composer.render();
       };
 
-      requestAnimationFrame(() => {
-        if (!destroyed) tick();
-      });
+      animate();
     };
 
     init();
@@ -566,16 +496,12 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     window.addEventListener("resize", handleResize);
 
     return () => {
-      destroyed = true;
-      cancelAnimationFrame(rafRef.current);
-      // Utiliser rendererRef.current — accessible depuis le closure du cleanup
-      rendererRef.current?.setAnimationLoop(null);
+      cancelAnimationFrame(frameRef.current);
       window.removeEventListener("resize", handleResize);
     };
   }, [globeRef]);
 
-  const bgColor = theme === "dark" ? "#000000" : "#ffffff";
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
+    <div ref={containerRef} style={{ width: "100%", height: "100vh" }} />
   );
 }
