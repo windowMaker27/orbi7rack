@@ -252,9 +252,9 @@ function tagGraticules(scene: THREE.Scene, isDark: boolean) {
     if ((obj.isLine || obj.isLineSegments) && !obj.__isGraticule) {
       obj.__isGraticule = true;
       obj.material = new THREE.LineBasicMaterial({
-        color: new THREE.Color(isDark ? "#993300" : "#004488"),
+        color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.5,
       });
     }
   });
@@ -266,7 +266,7 @@ function tagGraticules(scene: THREE.Scene, isDark: boolean) {
  * and will be tagged + colored on the next call.
  */
 function updateGraticules(scene: THREE.Scene, isDark: boolean) {
-  const gratColor = new THREE.Color(isDark ? "#993300" : "#004488");
+  const gratColor = new THREE.Color(isDark ? "#ff6600" : "#0066cc");
   scene.traverse((obj: any) => {
     if (obj.__isGraticule && obj.material) {
       obj.material.color.copy(gratColor);
@@ -277,7 +277,7 @@ function updateGraticules(scene: THREE.Scene, isDark: boolean) {
       obj.material = new THREE.LineBasicMaterial({
         color: gratColor,
         transparent: true,
-        opacity: 0.3,
+        opacity: 1.0,
       });
     }
   });
@@ -303,8 +303,8 @@ function applyTheme(
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-    const dir = new THREE.DirectionalLight(0xff9944, 0.8);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dir = new THREE.DirectionalLight(0xff9944, 1.0);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));

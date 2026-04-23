@@ -125,7 +125,7 @@ export function useFlightPositions(parcels: Parcel[]): {
   const positionMode: PositionModeMap = {};
   for (const [idStr, pos] of Object.entries(positions)) {
     const id = Number(idStr);
-    positionMode[id] = modeOverrides[id] ?? (pos.source === "live" ? "live" : "arc");
+    positionMode[id] = modeOverrides[id] ?? (pos.source === "live" ? "arc" : "live");
   }
 
   return { positions, positionMode, setPositionMode: setModeOverrides };
