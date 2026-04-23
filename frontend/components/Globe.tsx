@@ -368,6 +368,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
+  // Référence stable vers le patch — permet de le réappliquer sans recréer la closure
+  const patchRenderRef  = useRef<(() => void) | null>(null);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -379,6 +381,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
     applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, rendererRef.current, isDark);
+
+    // Réappliquer le patch après applyTheme car globe.gl peut avoir réinitialisé renderer.render
+    patchRenderRef.current?.();
 
     const prevState = spriteStateRef.current;
     spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
@@ -485,72 +490,79 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      // Attendre le premier frame de globe.gl avant de patcher render
-      // pour être sûr que son RAF loop interne est déjà installée
-      requestAnimationFrame(() => {
-        if (destroyed) return;
+      // Capturer le render original UNE seule fois ici
+      const originalRender = renderer.render.bind(renderer) as typeof renderer.render;
 
-        const originalRender = renderer.render.bind(renderer);
+      // composerRender utilise originalRender directement — jamais de swap
+      const composerRender = function(this: THREE.WebGLRenderer, s: THREE.Scene, c: THREE.Camera) {
+        if (s !== scene) {
+          originalRender(s, c);
+          return;
+        }
 
-        const composerRender = (s: THREE.Scene, c: THREE.Camera) => {
-          if (s !== scene) {
-            originalRender(s, c);
-            return;
+        // Mise à jour sprites
+        spritesRef.current.forEach(({ sprite, arc }) => {
+          if (!arc) return;
+          const livePos = flightPosRef.current[arc.id];
+          const mode = positionModeRef.current[arc.id] ?? "arc";
+
+          let targetLat: number, targetLng: number, targetAlt: number;
+          let targetHdg: number | null = null;
+
+          if (livePos?.lat != null && livePos?.lng != null) {
+            const rawProgress = livePos.progress;
+            const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
+              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
+            if (mode === "live") {
+              targetLat = livePos.lat; targetLng = livePos.lng;
+              targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+            } else {
+              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
+              targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+            }
+            targetHdg = livePos.heading ?? null;
+          } else {
+            [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+            targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
 
-          // Mise à jour sprites avant le rendu
-          spritesRef.current.forEach(({ sprite, arc }) => {
-            if (!arc) return;
-            const livePos = flightPosRef.current[arc.id];
-            const mode = positionModeRef.current[arc.id] ?? "arc";
+          if (arc._curLat === null) {
+            arc._curLat = targetLat; arc._curLng = targetLng;
+            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
+          }
 
-            let targetLat: number, targetLng: number, targetAlt: number;
-            let targetHdg: number | null = null;
+          arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
+          arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
+          arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
+          if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
-            if (livePos?.lat != null && livePos?.lng != null) {
-              const rawProgress = livePos.progress;
-              const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-                ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-              if (mode === "live") {
-                targetLat = livePos.lat; targetLng = livePos.lng;
-                targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
-              } else {
-                [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
-                targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
-              }
-              targetHdg = livePos.heading ?? null;
-            } else {
-              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-              targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
-            }
-
-            if (arc._curLat === null) {
-              arc._curLat = targetLat; arc._curLng = targetLng;
-              arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
-            }
-
-            arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
-            arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
-            arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
-            if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
-
-            spriteStateRef.current.set(arc.id, {
-              lat: arc._curLat!, lng: arc._curLng!,
-              alt: arc._curAlt!, hdg: arc._curHdg!,
-            });
-
-            const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-            sprite.position.set(coords.x, coords.y, coords.z);
-            (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
+          spriteStateRef.current.set(arc.id, {
+            lat: arc._curLat!, lng: arc._curLng!,
+            alt: arc._curAlt!, hdg: arc._curHdg!,
           });
 
-          // Remplacer temporairement par l'original pour éviter la récursion
-          renderer.render = originalRender;
-          composer.render();
-          renderer.render = composerRender;
-        };
+          const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+          sprite.position.set(coords.x, coords.y, coords.z);
+          (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
+        });
 
+        // Appeler composer.render() qui utilisera originalRender en interne
+        // On patche render AVANT l'appel pour que l'interne de composer utilise bien l'original
+        renderer.render = originalRender;
+        composer.render();
+        // Remettre notre patch immédiatement après
         renderer.render = composerRender;
+      };
+
+      // Fonction de patch réutilisable — stockée en ref pour réapplication
+      const patchRender = () => {
+        renderer.render = composerRender;
+      };
+      patchRenderRef.current = patchRender;
+
+      // Appliquer après le premier frame de globe.gl
+      requestAnimationFrame(() => {
+        if (!destroyed) patchRender();
       });
     };
 
