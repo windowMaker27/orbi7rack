@@ -45,7 +45,6 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
   RO:[45.94,24.96],RU:[61.52,105.31],SA:[23.88,45.07],SE:[60.12,18.64],SG:[1.35,103.81],
   TH:[15.87,100.99],TR:[38.96,35.24],TW:[23.69,120.96],UA:[48.37,31.16],US:[37.09,-95.71],
   VN:[14.05,108.27],ZA:[-28.47,24.67],
-  // Aéroports majeurs (utiles pour origin/destination live)
   CDG:[49.0097,2.5479],PEK:[40.0799,116.6031],PVG:[31.1443,121.8083],
   HND:[35.5494,139.7798],ICN:[37.4602,126.4407],DXB:[25.2532,55.3657],
   LHR:[51.4775,-0.4614],JFK:[40.6413,-73.7781],LAX:[33.9425,-118.4081],
@@ -101,15 +100,10 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-/**
- * Résout les endpoints (origine + destination) d'un colis pour l'arc globe.gl.
- * Priorité : données live (flightPosition.origin/destination) > centroid pays > estimated_position
- */
 function resolveEndpoints(
   parcel: Parcel,
   flightPos: { origin?: { lat: number; lng: number }; destination?: { lat: number; lng: number } } | undefined,
 ): { origin: [number, number] | null; destination: [number, number] | null } {
-  // ORIGINE
   let origin: [number, number] | null = null;
   if (flightPos?.origin?.lat != null && flightPos?.origin?.lng != null) {
     origin = [flightPos.origin.lat, flightPos.origin.lng];
@@ -117,7 +111,6 @@ function resolveEndpoints(
     origin = getCentroid(parcel.origin_country);
   }
 
-  // DESTINATION
   let destination: [number, number] | null = null;
   if (flightPos?.destination?.lat != null && flightPos?.destination?.lng != null) {
     destination = [flightPos.destination.lat, flightPos.destination.lng];
@@ -125,7 +118,6 @@ function resolveEndpoints(
     destination = getCentroid(parcel.dest_country);
   }
 
-  // Dernier fallback destination : estimated_position
   if (!destination && parcel.estimated_position) {
     destination = [parcel.estimated_position.lat, parcel.estimated_position.lng];
   }
@@ -136,14 +128,12 @@ function resolveEndpoints(
 function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
 
-  // Points : pour les vols live, on affiche départ ET arrivée réels
   const points: any[] = [];
   parcels.forEach(p => {
     const fp = flightPositions[p.id];
     const { origin, destination } = resolveEndpoints(p, fp);
     const color = SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e");
 
-    // Point départ
     if (origin) {
       points.push({
         lat: origin[0], lng: origin[1],
@@ -153,7 +143,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       });
     }
 
-    // Point destination
     if (destination) {
       points.push({
         lat: destination[0], lng: destination[1],
@@ -163,7 +152,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       });
     }
 
-    // Fallback : point estimated_position si pas de live
     if (!fp && p.estimated_position) {
       points.push({
         lat: p.estimated_position.lat, lng: p.estimated_position.lng,
@@ -174,7 +162,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
     }
   });
 
-  // Arcs : CDG → PEK (vraies coordonnées live)
   const arcs = parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
@@ -189,7 +176,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       };
     }).filter(Boolean);
 
-  // Rings : position live si dispo, sinon estimated
   const rings = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -199,7 +185,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
     }).filter(Boolean);
 
-  // Transport sprites
   const transport = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -258,6 +243,10 @@ function applyHexColors(globe: any, isDark: boolean) {
   });
 }
 
+// Identifiant unique pour repérer les matériaux de graticules (lignes géographiques),
+// sans toucher aux matériaux des hexagones.
+const GRATICULE_MAT_TAG = "__graticule";
+
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
   globe
     .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
@@ -267,13 +256,22 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       transparent: true, opacity: 0.95,
     }));
 
+  // On ne retouche QUE les lignes de graticule (déjà taguées ou non-hex),
+  // pour ne pas écraser les matériaux des hexagones.
   setTimeout(() => {
     scene.traverse((obj: any) => {
       if (obj.isLine || obj.isLineSegments) {
-        if (obj.material) obj.material = new THREE.LineBasicMaterial({
+        const mat = obj.material;
+        if (!mat) return;
+        // Skip les matériaux déjà identifiés comme hex
+        if (mat.__isHex) return;
+        // Tag + update
+        mat[GRATICULE_MAT_TAG] = true;
+        obj.material = new THREE.LineBasicMaterial({
           color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
           transparent: true, opacity: 0.25,
         });
+        obj.material[GRATICULE_MAT_TAG] = true;
       }
     });
   }, 50);
@@ -322,7 +320,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   positionModeRef.current = positionMode;
   themeRef.current        = theme;
 
-  // Re-render arc + points quand parcels OU flightPositions changent
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
@@ -405,13 +402,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
+      // Premier passage : tagger les graticules pour les distinguer des hex
       setTimeout(() => {
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
-            if (obj.material) obj.material = new THREE.LineBasicMaterial({
-              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-              transparent: true, opacity: 0.25,
-            });
+            if (obj.material) {
+              obj.material = new THREE.LineBasicMaterial({
+                color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+                transparent: true, opacity: 0.25,
+              });
+              obj.material[GRATICULE_MAT_TAG] = true;
+            }
           }
         });
       }, 500);
@@ -448,7 +449,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
-          const mode = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
+          // FIX: arc par défaut, live seulement si override explicite
+          const mode = positionModeRef.current[arc.id] ?? "arc";
 
           let targetLat: number, targetLng: number, targetAlt: number;
           let targetHdg: number | null = null;
@@ -463,7 +465,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
               targetLat = livePos.lat; targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              // Mode arc : utilise les vrais endpoints (startLat/endLat déjà résolus)
               [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
               targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
