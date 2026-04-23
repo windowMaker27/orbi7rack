@@ -283,7 +283,7 @@ function buildManualGraticule(isDark: boolean): THREE.LineSegments {
   const mat = new THREE.LineBasicMaterial({
     color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
     transparent: true,
-    opacity: 0.5,
+    opacity: isDark ? 0.5 : 0.25,
   });
   return new THREE.LineSegments(geo, mat);
 }
@@ -291,7 +291,7 @@ function buildManualGraticule(isDark: boolean): THREE.LineSegments {
 function updateManualGraticule(graticule: THREE.LineSegments, isDark: boolean) {
   const mat = graticule.material as THREE.LineBasicMaterial;
   mat.color.set(isDark ? "#ff6600" : "#0066cc");
-  mat.opacity = 0.5;
+  mat.opacity = isDark ? 0.5 : 0.25;
   mat.needsUpdate = true;
 }
 
@@ -301,18 +301,29 @@ function applyTheme(
   globeMat: THREE.MeshPhongMaterial,
   graticule: THREE.LineSegments,
   bloomPass: UnrealBloomPass,
+  renderer: THREE.WebGLRenderer,
   isDark: boolean,
 ) {
   globeMat.color.set(isDark ? "#0d0000" : "#dde8f0");
-  globeMat.emissive.set(isDark ? "#0a0000" : "#c8dcea");
+  globeMat.emissive.set(isDark ? "#0a0000" : "#b0c8d8");
   globeMat.needsUpdate = true;
 
   globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
 
   updateManualGraticule(graticule, isDark);
 
-  bloomPass.strength  = isDark ? 1.6 : 0.08;
+  // Dark: LinearSRGB colorspace for correct bloom, light: SRGB + clear blanc
+  if (isDark) {
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    renderer.setClearColor(0x000000, 1);
+  } else {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0xffffff, 1);
+  }
+
+  bloomPass.strength  = isDark ? 1.4 : 0.08;
   bloomPass.threshold = isDark ? 0.15 : 0.85;
+  bloomPass.radius    = isDark ? 0.4  : 0.6;
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -323,8 +334,8 @@ function applyTheme(
     const dir = new THREE.DirectionalLight(0xff9944, 1.0);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const dir = new THREE.DirectionalLight(0xaaccff, 0.8);
     dir.position.set(1, 1, 1); scene.add(dir);
   }
 
@@ -346,6 +357,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const containerRef    = useRef<HTMLDivElement>(null);
   const composerRef     = useRef<EffectComposer | null>(null);
   const bloomPassRef    = useRef<UnrealBloomPass | null>(null);
+  const rendererRef     = useRef<THREE.WebGLRenderer | null>(null);
   const frameRef        = useRef<number>(0);
   const pendingRef      = useRef<Parcel[]>(parcels);
   const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
@@ -363,10 +375,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   useEffect(() => {
     pendingRef.current = parcels;
-    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current || !bloomPassRef.current) return;
+    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current || !bloomPassRef.current || !rendererRef.current) return;
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
-    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, isDark);
+    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, rendererRef.current, isDark);
 
     const prevState = spriteStateRef.current;
     spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
@@ -394,17 +406,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       const globeMat = new THREE.MeshPhongMaterial({
         color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-        emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+        emissive: new THREE.Color(isDark ? "#0a0000" : "#b0c8d8"),
         transparent: true, opacity: 0.95,
       });
       globeMatRef.current = globeMat;
 
       const globe = (GlobeGL as any)(
-        { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
+        { animateIn: true, rendererConfig: { antialias: true, alpha: false } }
       )(containerRef.current)
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
-        .backgroundColor("rgba(0,0,0,0)")
+        .backgroundColor(isDark ? "#000000" : "#ffffff")
         .showGraticules(false)
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
         .atmosphereAltitude(0.12)
@@ -419,7 +431,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
       const scene    = globe.scene() as THREE.Scene;
-      sceneRef.current = scene;
+      sceneRef.current  = scene;
+      rendererRef.current = renderer;
+
+      // Fix bloom color banding: LinearSRGB for dark, SRGB for light
+      if (isDark) {
+        renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+        renderer.setClearColor(0x000000, 1);
+      } else {
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.setClearColor(0xffffff, 1);
+      }
 
       const graticule = buildManualGraticule(isDark);
       scene.add(graticule);
@@ -430,8 +452,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         const dir = new THREE.DirectionalLight(0xff9944, 1.0);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const dir = new THREE.DirectionalLight(0xaaccff, 0.8);
         dir.position.set(1, 1, 1); scene.add(dir);
       }
 
@@ -456,22 +478,19 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        isDark ? 1.6 : 0.5,
-        0.4,
-        isDark ? 0.15 : 0.35,
+        isDark ? 1.4 : 0.08,
+        isDark ? 0.4  : 0.6,
+        isDark ? 0.15 : 0.85,
       );
       composer.addPass(bloom);
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      // Override globe.gl's renderer.render with a named function (no arguments.callee)
-      // so that every frame globe.gl fires, we intercept and run composer instead.
       const originalRender = renderer.render.bind(renderer);
 
       const composerRender = (s: THREE.Scene, c: THREE.Camera) => {
         if (s !== scene) { originalRender(s, c); return; }
 
-        // Update sprites
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
@@ -517,7 +536,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
-        // Restore original so composer's RenderPass can call it internally, then re-override
         renderer.render = originalRender;
         composer.render();
         renderer.render = composerRender;
@@ -543,7 +561,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     };
   }, [globeRef]);
 
-  const bgColor = theme === "dark" ? "#0a0000" : "#f0ede8";
+  const bgColor = theme === "dark" ? "#000000" : "#ffffff";
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
   );
