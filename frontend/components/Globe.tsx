@@ -140,7 +140,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
     if (origin) {
       points.push({
         lat: origin[0], lng: origin[1],
-        label: `${p.tracking_number} — départ`,
+        label: `${p.tracking_number} \u2014 d\u00e9part`,
         status: p.status, description: p.description,
         color, altitude: 0.02, radius: 0.35,
       });
@@ -149,7 +149,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
     if (destination) {
       points.push({
         lat: destination[0], lng: destination[1],
-        label: `${p.tracking_number} — arrivée`,
+        label: `${p.tracking_number} \u2014 arriv\u00e9e`,
         status: p.status, description: p.description,
         color: color + "99", altitude: 0.02, radius: 0.3,
       });
@@ -199,7 +199,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         startLat: origin[0], startLng: origin[1],
         endLat: destination[0], endLng: destination[1],
         color: SC[p.status] ?? "#fff",
-        emoji: p.status === "out_for_delivery" ? "🚚" : "✈️",
+        emoji: p.status === "out_for_delivery" ? "\ud83d\ude9a" : "\u2708\ufe0f",
         _curLat: null as number | null, _curLng: null as number | null,
         _curAlt: null as number | null, _curHdg: null as number | null,
       };
@@ -218,7 +218,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .pointLabel((d: any) => `
       <div style="background:rgba(10,0,0,0.85);border:1px solid rgba(255,68,0,0.4);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#fff;min-width:180px;">
         <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
-        <div style="color:${d.color};margin-bottom:4px">● ${d.status}</div>
+        <div style="color:${d.color};margin-bottom:4px">\u25cf ${d.status}</div>
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
       </div>
     `);
@@ -416,10 +416,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
-      // globe.gl owns its own RAF — we don't touch it.
-      // We plug our composer on top: each frame, composer.render() replaces
-      // globe.gl's native renderer.render(scene, camera) call via RenderPass.
-
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
       const scene    = globe.scene() as THREE.Scene;
@@ -454,89 +450,80 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       });
       spritesRef.current = setupSprites(scene, transport);
 
-      // Three.js JSM composer — stable, no conflict with globe.gl's RAF
       const w = containerRef.current!.clientWidth;
       const h = containerRef.current!.clientHeight;
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        isDark ? 1.6 : 0.5,   // strength
-        0.4,                    // radius
-        isDark ? 0.15 : 0.35,  // threshold
+        isDark ? 1.6 : 0.5,
+        0.4,
+        isDark ? 0.15 : 0.35,
       );
       composer.addPass(bloom);
-      bloomPassRef.current  = bloom;
-      composerRef.current   = composer;
+      bloomPassRef.current = bloom;
+      composerRef.current  = composer;
 
-      // Override globe.gl's per-frame render with our composer
-      // globe.gl calls renderer.render(scene, camera) inside its own RAF.
-      // We replace that with composer.render() so bloom is applied every frame.
+      // Override globe.gl's renderer.render with a named function (no arguments.callee)
+      // so that every frame globe.gl fires, we intercept and run composer instead.
       const originalRender = renderer.render.bind(renderer);
-      renderer.render = (s: THREE.Scene, c: THREE.Camera) => {
-        if (s === scene) {
-          // Update sprites before composer fires
-          spritesRef.current.forEach(({ sprite, arc }) => {
-            if (!arc) return;
-            const livePos = flightPosRef.current[arc.id];
-            const mode = positionModeRef.current[arc.id] ?? "arc";
 
-            let targetLat: number, targetLng: number, targetAlt: number;
-            let targetHdg: number | null = null;
+      const composerRender = (s: THREE.Scene, c: THREE.Camera) => {
+        if (s !== scene) { originalRender(s, c); return; }
 
-            if (livePos?.lat != null && livePos?.lng != null) {
-              const rawProgress = livePos.progress;
-              const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-                ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-              if (mode === "live") {
-                targetLat = livePos.lat; targetLng = livePos.lng;
-                targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
-              } else {
-                [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
-                targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
-              }
-              targetHdg = livePos.heading ?? null;
+        // Update sprites
+        spritesRef.current.forEach(({ sprite, arc }) => {
+          if (!arc) return;
+          const livePos = flightPosRef.current[arc.id];
+          const mode = positionModeRef.current[arc.id] ?? "arc";
+
+          let targetLat: number, targetLng: number, targetAlt: number;
+          let targetHdg: number | null = null;
+
+          if (livePos?.lat != null && livePos?.lng != null) {
+            const rawProgress = livePos.progress;
+            const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
+              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
+            if (mode === "live") {
+              targetLat = livePos.lat; targetLng = livePos.lng;
+              targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-              targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
+              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
+              targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
+            targetHdg = livePos.heading ?? null;
+          } else {
+            [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+            targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
+          }
 
-            if (arc._curLat === null) {
-              arc._curLat = targetLat; arc._curLng = targetLng;
-              arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
-            }
+          if (arc._curLat === null) {
+            arc._curLat = targetLat; arc._curLng = targetLng;
+            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
+          }
 
-            arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
-            arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
-            arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
-            if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
+          arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
+          arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
+          arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
+          if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
-            spriteStateRef.current.set(arc.id, {
-              lat: arc._curLat!, lng: arc._curLng!,
-              alt: arc._curAlt!, hdg: arc._curHdg!,
-            });
-
-            const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-            sprite.position.set(coords.x, coords.y, coords.z);
-            (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
+          spriteStateRef.current.set(arc.id, {
+            lat: arc._curLat!, lng: arc._curLng!,
+            alt: arc._curAlt!, hdg: arc._curHdg!,
           });
 
-          // Temporarily restore so composer's internal passes can call render
-          renderer.render = originalRender;
-          composer.render();
-          renderer.render = (s2: THREE.Scene, c2: THREE.Camera) => {
-            if (s2 === scene) {
-              renderer.render = originalRender;
-              composer.render();
-              renderer.render = arguments.callee as any;
-            } else {
-              originalRender(s2, c2);
-            }
-          };
-        } else {
-          originalRender(s, c);
-        }
+          const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+          sprite.position.set(coords.x, coords.y, coords.z);
+          (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
+        });
+
+        // Restore original so composer's RenderPass can call it internally, then re-override
+        renderer.render = originalRender;
+        composer.render();
+        renderer.render = composerRender;
       };
+
+      renderer.render = composerRender;
     };
 
     init();
