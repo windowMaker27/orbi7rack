@@ -55,11 +55,7 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-// Dark : oranges chauds très contrastés
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-// Light : équivalents bleus — même écart de luminosité/saturation que les oranges dark
-// #0033cc ≈ #cc3300 (sombre saturé) | #0066ff ≈ #ff6600 (vif) | #0099dd ≈ #ffaa00 (clair chaud)
-// #1a44bb ≈ #ee4400 | #0055ff ≈ #ff5500 | #2277cc ≈ #dd7700 | #003399 ≈ #ff4400 | #0088cc ≈ #ff8800
 const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
 
 function stableHexColor(featureIndex: number, isDark: boolean): string {
@@ -247,10 +243,23 @@ function applyHexColors(globe: any, isDark: boolean) {
   });
 }
 
-// Tag pour identifier les matériaux de graticules (lignes geo) vs hex
-const GRATICULE_MAT_TAG = "__graticule";
+/** Met à jour la couleur des graticules à partir des références stockées à l'init. */
+function updateGraticules(graticuleRefs: THREE.Object3D[], isDark: boolean) {
+  const color = new THREE.Color(isDark ? "#993300" : "#0044aa");
+  graticuleRefs.forEach((obj: any) => {
+    if (obj.material) {
+      obj.material.color.copy(color);
+      obj.material.needsUpdate = true;
+    }
+  });
+}
 
-function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
+function applyTheme(
+  globe: any,
+  scene: THREE.Scene,
+  isDark: boolean,
+  graticuleRefs: THREE.Object3D[],
+) {
   globe
     .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
     .globeMaterial(new THREE.MeshPhongMaterial({
@@ -259,22 +268,8 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       transparent: true, opacity: 0.95,
     }));
 
-  // Ne retouche QUE les graticules (tagés GRATICULE_MAT_TAG), pas les hex
-  setTimeout(() => {
-    scene.traverse((obj: any) => {
-      if (obj.isLine || obj.isLineSegments) {
-        const mat = obj.material;
-        if (!mat) return;
-        // FIX: vérifier le bon tag (GRATICULE_MAT_TAG, pas __isHex)
-        if (!mat[GRATICULE_MAT_TAG]) return;
-        obj.material = new THREE.LineBasicMaterial({
-          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-          transparent: true, opacity: 0.25,
-        });
-        obj.material[GRATICULE_MAT_TAG] = true;
-      }
-    });
-  }, 50);
+  // Uniquement les graticules stockés à l'init — jamais les hex
+  updateGraticules(graticuleRefs, isDark);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -315,6 +310,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
+  // Références des objets graticule capturées une seule fois à l'init
+  const graticuleRefsRef = useRef<THREE.Object3D[]>([]);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -326,7 +323,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
     if (sceneRef.current) {
-      applyTheme(globeRef.current, sceneRef.current, isDark);
+      applyTheme(globeRef.current, sceneRef.current, isDark, graticuleRefsRef.current);
       const prevState = spriteStateRef.current;
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
       const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
@@ -402,20 +399,20 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
-      // Init : tagger TOUS les Line/LineSegments comme graticules
-      // (les hex sont des Mesh, pas des Line)
+      // Init : capturer les références des graticules UNE SEULE FOIS
+      // et leur appliquer le bon matériau. Les hex sont des Mesh, pas des Line.
       setTimeout(() => {
+        const refs: THREE.Object3D[] = [];
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
-            if (obj.material) {
-              obj.material = new THREE.LineBasicMaterial({
-                color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-                transparent: true, opacity: 0.25,
-              });
-              obj.material[GRATICULE_MAT_TAG] = true;
-            }
+            obj.material = new THREE.LineBasicMaterial({
+              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+              transparent: true, opacity: 0.25,
+            });
+            refs.push(obj);
           }
         });
+        graticuleRefsRef.current = refs;
       }, 500);
 
       globeRef.current = globe;
