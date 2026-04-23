@@ -55,8 +55,12 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
+// Dark : oranges chauds très contrastés
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-const HEX_PALETTE_LIGHT = ["#0044aa","#0066cc","#1177dd","#2255bb","#3388ee","#0055bb","#1166cc","#0077dd"];
+// Light : équivalents bleus — même écart de luminosité/saturation que les oranges dark
+// #0033cc ≈ #cc3300 (sombre saturé) | #0066ff ≈ #ff6600 (vif) | #0099dd ≈ #ffaa00 (clair chaud)
+// #1a44bb ≈ #ee4400 | #0055ff ≈ #ff5500 | #2277cc ≈ #dd7700 | #003399 ≈ #ff4400 | #0088cc ≈ #ff8800
+const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
 
 function stableHexColor(featureIndex: number, isDark: boolean): string {
   const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
@@ -243,8 +247,7 @@ function applyHexColors(globe: any, isDark: boolean) {
   });
 }
 
-// Identifiant unique pour repérer les matériaux de graticules (lignes géographiques),
-// sans toucher aux matériaux des hexagones.
+// Tag pour identifier les matériaux de graticules (lignes geo) vs hex
 const GRATICULE_MAT_TAG = "__graticule";
 
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
@@ -256,17 +259,14 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       transparent: true, opacity: 0.95,
     }));
 
-  // On ne retouche QUE les lignes de graticule (déjà taguées ou non-hex),
-  // pour ne pas écraser les matériaux des hexagones.
+  // Ne retouche QUE les graticules (tagés GRATICULE_MAT_TAG), pas les hex
   setTimeout(() => {
     scene.traverse((obj: any) => {
       if (obj.isLine || obj.isLineSegments) {
         const mat = obj.material;
         if (!mat) return;
-        // Skip les matériaux déjà identifiés comme hex
-        if (mat.__isHex) return;
-        // Tag + update
-        mat[GRATICULE_MAT_TAG] = true;
+        // FIX: vérifier le bon tag (GRATICULE_MAT_TAG, pas __isHex)
+        if (!mat[GRATICULE_MAT_TAG]) return;
         obj.material = new THREE.LineBasicMaterial({
           color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
           transparent: true, opacity: 0.25,
@@ -402,7 +402,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
-      // Premier passage : tagger les graticules pour les distinguer des hex
+      // Init : tagger TOUS les Line/LineSegments comme graticules
+      // (les hex sont des Mesh, pas des Line)
       setTimeout(() => {
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
@@ -449,7 +450,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
-          // FIX: arc par défaut, live seulement si override explicite
           const mode = positionModeRef.current[arc.id] ?? "arc";
 
           let targetLat: number, targetLng: number, targetAlt: number;
