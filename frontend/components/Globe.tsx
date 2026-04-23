@@ -58,11 +58,15 @@ const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 const GLOBE_RADIUS = 100;
 
-// Hex blancs en dark : luminance max → bloom garanti par UnrealBloomPass
-// La teinte rouge vient du DirectionalLight + globeMat, pas de la couleur hex
-// En light : bleus sombres, pas de bloom volontaire
-const HEX_PALETTE_DARK  = ["#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff"];
-const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
+// Palette hex orangée variée — contraste pays visible, pas de saturation blanche
+const HEX_PALETTE_DARK = [
+  "#ff4400", "#ff5500", "#ff6600", "#ff7700",
+  "#ff8800", "#ff9900", "#ffaa00", "#ee3300",
+];
+const HEX_PALETTE_LIGHT = [
+  "#003399","#0055ff","#0088cc","#0099dd",
+  "#0033cc","#0066ff","#2277cc","#1a44bb",
+];
 
 function stableHexColor(featureIndex: number, isDark: boolean): string {
   const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
@@ -307,30 +311,30 @@ function applyTheme(
   renderer: THREE.WebGLRenderer,
   isDark: boolean,
 ) {
-  // Globe sombre avec emissive boosté pour que la sphère elle-même contribue au bloom
   globeMat.color.set(isDark ? "#110000" : "#dde8f0");
-  globeMat.emissive.set(isDark ? "#330800" : "#b0c8d8");
-  globeMat.emissiveIntensity = isDark ? 1.0 : 1.0;
+  globeMat.emissive.set(isDark ? "#1a0400" : "#b0c8d8");
+  globeMat.emissiveIntensity = 0.6;
   globeMat.needsUpdate = true;
 
   globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
   updateManualGraticule(graticule, isDark);
 
-  // FIX: toujours SRGBColorSpace — LinearSRGB causait le rougissement au swap thème
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
 
-  bloomPass.strength  = isDark ? 1.2 : 0.08;
-  bloomPass.threshold = isDark ? 0.0 : 0.85;
-  bloomPass.radius    = isDark ? 0.6 : 0.6;
+  // Bloom doux : on ne cherche pas à forcer les hex, on bloom surtout la grille et l'atmosphère
+  bloomPass.strength  = isDark ? 0.7  : 0.08;
+  bloomPass.threshold = isDark ? 0.15 : 0.85;
+  bloomPass.radius    = isDark ? 0.4  : 0.6;
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-    const dir = new THREE.DirectionalLight(0xff5500, 0.8);
+    // Ambient suffisant pour lire les hex sans les saturer
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    const dir = new THREE.DirectionalLight(0xff5500, 0.6);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -409,8 +413,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       const globeMat = new THREE.MeshPhongMaterial({
         color: new THREE.Color(isDark ? "#110000" : "#dde8f0"),
-        emissive: new THREE.Color(isDark ? "#330800" : "#b0c8d8"),
-        emissiveIntensity: 1.0,
+        emissive: new THREE.Color(isDark ? "#1a0400" : "#b0c8d8"),
+        emissiveIntensity: 0.6,
         transparent: true, opacity: 0.95,
       });
       globeMatRef.current = globeMat;
@@ -438,7 +442,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       sceneRef.current    = scene;
       rendererRef.current = renderer;
 
-      // FIX: SRGBColorSpace uniquement — pas de LinearSRGB qui cause le rougissement
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
 
@@ -447,8 +450,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       graticuleRef.current = graticule;
 
       if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-        const dir = new THREE.DirectionalLight(0xff5500, 0.8);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dir = new THREE.DirectionalLight(0xff5500, 0.6);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
         scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -477,9 +480,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        isDark ? 1.2 : 0.08,  // strength
-        isDark ? 0.6 : 0.6,   // radius
-        isDark ? 0.0 : 0.85,  // threshold=0 → bloom proportionnel à luminance
+        isDark ? 0.7  : 0.08,
+        isDark ? 0.4  : 0.6,
+        isDark ? 0.15 : 0.85,
       );
       composer.addPass(bloom);
       bloomPassRef.current = bloom;
