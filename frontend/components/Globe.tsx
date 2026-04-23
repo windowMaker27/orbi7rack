@@ -485,69 +485,73 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      // Stopper la RAF loop interne de globe.gl pour prendre le contrôle total
-      globe.pauseAnimation();
-
-      const controls = globe.controls();
-
-      const tick = () => {
+      // Attendre le premier frame de globe.gl avant de patcher render
+      // pour être sûr que son RAF loop interne est déjà installée
+      requestAnimationFrame(() => {
         if (destroyed) return;
-        frameRef.current = requestAnimationFrame(tick);
 
-        // Mettre à jour l'autoRotate via controls
-        controls.update();
+        const originalRender = renderer.render.bind(renderer);
 
-        // Mise à jour position sprites
-        spritesRef.current.forEach(({ sprite, arc }) => {
-          if (!arc) return;
-          const livePos = flightPosRef.current[arc.id];
-          const mode = positionModeRef.current[arc.id] ?? "arc";
+        const composerRender = (s: THREE.Scene, c: THREE.Camera) => {
+          if (s !== scene) {
+            originalRender(s, c);
+            return;
+          }
 
-          let targetLat: number, targetLng: number, targetAlt: number;
-          let targetHdg: number | null = null;
+          // Mise à jour sprites avant le rendu
+          spritesRef.current.forEach(({ sprite, arc }) => {
+            if (!arc) return;
+            const livePos = flightPosRef.current[arc.id];
+            const mode = positionModeRef.current[arc.id] ?? "arc";
 
-          if (livePos?.lat != null && livePos?.lng != null) {
-            const rawProgress = livePos.progress;
-            const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-            if (mode === "live") {
-              targetLat = livePos.lat; targetLng = livePos.lng;
-              targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+            let targetLat: number, targetLng: number, targetAlt: number;
+            let targetHdg: number | null = null;
+
+            if (livePos?.lat != null && livePos?.lng != null) {
+              const rawProgress = livePos.progress;
+              const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
+                ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
+              if (mode === "live") {
+                targetLat = livePos.lat; targetLng = livePos.lng;
+                targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+              } else {
+                [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
+                targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+              }
+              targetHdg = livePos.heading ?? null;
             } else {
-              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
-              targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+              targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
             }
-            targetHdg = livePos.heading ?? null;
-          } else {
-            [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-            targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
-          }
 
-          if (arc._curLat === null) {
-            arc._curLat = targetLat; arc._curLng = targetLng;
-            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
-          }
+            if (arc._curLat === null) {
+              arc._curLat = targetLat; arc._curLng = targetLng;
+              arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
+            }
 
-          arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
-          arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
-          arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
-          if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
+            arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
+            arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
+            arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
+            if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
-          spriteStateRef.current.set(arc.id, {
-            lat: arc._curLat!, lng: arc._curLng!,
-            alt: arc._curAlt!, hdg: arc._curHdg!,
+            spriteStateRef.current.set(arc.id, {
+              lat: arc._curLat!, lng: arc._curLng!,
+              alt: arc._curAlt!, hdg: arc._curHdg!,
+            });
+
+            const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+            sprite.position.set(coords.x, coords.y, coords.z);
+            (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
           });
 
-          const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-          sprite.position.set(coords.x, coords.y, coords.z);
-          (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
-        });
+          // Remplacer temporairement par l'original pour éviter la récursion
+          renderer.render = originalRender;
+          composer.render();
+          renderer.render = composerRender;
+        };
 
-        // Rendu via composer (bloom permanent)
-        composer.render();
-      };
-
-      tick();
+        renderer.render = composerRender;
+      });
     };
 
     init();
