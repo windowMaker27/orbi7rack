@@ -312,7 +312,6 @@ function applyTheme(
 
   updateManualGraticule(graticule, isDark);
 
-  // Dark: LinearSRGB colorspace for correct bloom, light: SRGB + clear blanc
   if (isDark) {
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     renderer.setClearColor(0x000000, 1);
@@ -395,12 +394,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   useEffect(() => {
     if (!containerRef.current) return;
+    let destroyed = false;
+
     const init = async () => {
       const isDark = themeRef.current === "dark";
       const [{ default: GlobeGL }, countries] = await Promise.all([
         import("globe.gl"),
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
+
+      // Guard: composant démonté pendant l'await
+      if (destroyed || !containerRef.current) return;
 
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
 
@@ -414,8 +418,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const globe = (GlobeGL as any)(
         { animateIn: true, rendererConfig: { antialias: true, alpha: false } }
       )(containerRef.current)
-        .width(containerRef.current!.clientWidth)
-        .height(containerRef.current!.clientHeight)
+        .width(containerRef.current.clientWidth)
+        .height(containerRef.current.clientHeight)
         .backgroundColor(isDark ? "#000000" : "#ffffff")
         .showGraticules(false)
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
@@ -434,7 +438,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       sceneRef.current  = scene;
       rendererRef.current = renderer;
 
-      // Fix bloom color banding: LinearSRGB for dark, SRGB for light
       if (isDark) {
         renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
         renderer.setClearColor(0x000000, 1);
@@ -472,8 +475,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       });
       spritesRef.current = setupSprites(scene, transport);
 
-      const w = containerRef.current!.clientWidth;
-      const h = containerRef.current!.clientHeight;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
@@ -556,6 +559,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     };
     window.addEventListener("resize", handleResize);
     return () => {
+      destroyed = true;
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(frameRef.current);
     };
