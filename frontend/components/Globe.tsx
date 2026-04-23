@@ -436,8 +436,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
       const scene    = globe.scene() as THREE.Scene;
-      sceneRef.current    = scene;
+
+      // Stocker dans les refs AVANT le cleanup pour éviter le ReferenceError
       rendererRef.current = renderer;
+      sceneRef.current    = scene;
 
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
@@ -485,23 +487,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      // Stopper la loop interne de globe.gl (setAnimationLoop)
-      // pour reprendre totalement le contrôle du rendu
+      // Stopper la loop interne de globe.gl pour prendre le contrôle total
       renderer.setAnimationLoop(null);
 
-      // Récupérer la fonction interne de tick de globe.gl
-      // globe.gl expose _animFrameRequestId et utilise requestAnimationFrame en fallback
-      // On la reconstruit : controls.update() + composer.render()
       const controls = globe.controls();
 
       const tick = () => {
         if (destroyed) return;
         rafRef.current = requestAnimationFrame(tick);
 
-        // Mettre à jour les contrôles (autoRotate, damping…)
         controls.update();
 
-        // Mise à jour sprites
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
@@ -549,12 +545,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
-        // Rendu via composer (bloom garanti à chaque frame)
         composer.render();
       };
 
-      // Laisser globe.gl finir son init animateIn avant de prendre la main
-      // (animateIn dure ~1s, on attend 1 frame pour laisser le premier rendu se faire)
       requestAnimationFrame(() => {
         if (!destroyed) tick();
       });
@@ -571,10 +564,12 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       }
     };
     window.addEventListener("resize", handleResize);
+
     return () => {
       destroyed = true;
       cancelAnimationFrame(rafRef.current);
-      renderer?.setAnimationLoop(null);
+      // Utiliser rendererRef.current — accessible depuis le closure du cleanup
+      rendererRef.current?.setAnimationLoop(null);
       window.removeEventListener("resize", handleResize);
     };
   }, [globeRef]);
