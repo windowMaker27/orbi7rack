@@ -358,7 +358,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const composerRef     = useRef<EffectComposer | null>(null);
   const bloomPassRef    = useRef<UnrealBloomPass | null>(null);
   const rendererRef     = useRef<THREE.WebGLRenderer | null>(null);
-  const frameRef        = useRef<number>(0);
+  const rafRef          = useRef<number>(0);
   const pendingRef      = useRef<Parcel[]>(parcels);
   const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef        = useRef<THREE.Scene | null>(null);
@@ -368,8 +368,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
-  // Référence stable vers le patch — permet de le réappliquer sans recréer la closure
-  const patchRenderRef  = useRef<(() => void) | null>(null);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -381,9 +379,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
     applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, rendererRef.current, isDark);
-
-    // Réappliquer le patch après applyTheme car globe.gl peut avoir réinitialisé renderer.render
-    patchRenderRef.current?.();
 
     const prevState = spriteStateRef.current;
     spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
@@ -490,15 +485,21 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      // Capturer le render original UNE seule fois ici
-      const originalRender = renderer.render.bind(renderer) as typeof renderer.render;
+      // Stopper la loop interne de globe.gl (setAnimationLoop)
+      // pour reprendre totalement le contrôle du rendu
+      renderer.setAnimationLoop(null);
 
-      // composerRender utilise originalRender directement — jamais de swap
-      const composerRender = function(this: THREE.WebGLRenderer, s: THREE.Scene, c: THREE.Camera) {
-        if (s !== scene) {
-          originalRender(s, c);
-          return;
-        }
+      // Récupérer la fonction interne de tick de globe.gl
+      // globe.gl expose _animFrameRequestId et utilise requestAnimationFrame en fallback
+      // On la reconstruit : controls.update() + composer.render()
+      const controls = globe.controls();
+
+      const tick = () => {
+        if (destroyed) return;
+        rafRef.current = requestAnimationFrame(tick);
+
+        // Mettre à jour les contrôles (autoRotate, damping…)
+        controls.update();
 
         // Mise à jour sprites
         spritesRef.current.forEach(({ sprite, arc }) => {
@@ -541,28 +542,21 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             alt: arc._curAlt!, hdg: arc._curHdg!,
           });
 
-          const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-          sprite.position.set(coords.x, coords.y, coords.z);
+          if (globeRef.current) {
+            const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+            sprite.position.set(coords.x, coords.y, coords.z);
+          }
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
-        // Appeler composer.render() qui utilisera originalRender en interne
-        // On patche render AVANT l'appel pour que l'interne de composer utilise bien l'original
-        renderer.render = originalRender;
+        // Rendu via composer (bloom garanti à chaque frame)
         composer.render();
-        // Remettre notre patch immédiatement après
-        renderer.render = composerRender;
       };
 
-      // Fonction de patch réutilisable — stockée en ref pour réapplication
-      const patchRender = () => {
-        renderer.render = composerRender;
-      };
-      patchRenderRef.current = patchRender;
-
-      // Appliquer après le premier frame de globe.gl
+      // Laisser globe.gl finir son init animateIn avant de prendre la main
+      // (animateIn dure ~1s, on attend 1 frame pour laisser le premier rendu se faire)
       requestAnimationFrame(() => {
-        if (!destroyed) patchRender();
+        if (!destroyed) tick();
       });
     };
 
@@ -579,8 +573,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     window.addEventListener("resize", handleResize);
     return () => {
       destroyed = true;
+      cancelAnimationFrame(rafRef.current);
+      renderer?.setAnimationLoop(null);
       window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(frameRef.current);
     };
   }, [globeRef]);
 
