@@ -311,8 +311,8 @@ function applyTheme(
 
   updateManualGraticule(graticule, isDark);
 
-  bloomPass.strength  = isDark ? 1.6 : 0.5;
-  bloomPass.threshold = isDark ? 0.15 : 0.35;
+  bloomPass.strength  = isDark ? 1.6 : 0.08;
+  bloomPass.threshold = isDark ? 0.15 : 0.85;
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
