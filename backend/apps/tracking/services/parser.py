@@ -37,7 +37,6 @@ def parse_17track_datetime(value: str | None):
     return None
 
 
-
 def extract_event_location(event: dict[str, Any]) -> str:
     # Priorité : champs c et d
     parts = [event.get("c", "").strip(), event.get("d", "").strip()]
@@ -61,18 +60,31 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
 
     item = accepted[0]
     track = item.get("track", {})
-    print("TRACK KEYS:", list(track.keys()))   
-    print("Z1 VALUE:", track.get("z1", "ABSENT"))  
+    print("TRACK KEYS:", list(track.keys()))
+    print("Z1 VALUE:", track.get("z1", "ABSENT"))
 
     # Mapper origin/dest country
+    # "b" = pays d'origine, "d" = pays de destination finale
+    # ATTENTION : "c" = pays de transit ACTUEL (ne pas utiliser pour dest_country)
     origin_code = track.get("b") or 0
-    dest_code = track.get("c") or 0
+    dest_code   = track.get("d") or 0
+
+    # Si "d" absent (ancien format), fallback sur le dernier event geocodé
+    # pour éviter d'utiliser "c" (transit courant) comme destination
+    if not dest_code:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"[17track] Champ 'd' absent pour {parcel.tracking_number}, dest_country non mis à jour"
+        )
+
     iso_origin, _, _, _ = country_code_to_iso(origin_code)
     iso_dest, _, _, _   = country_code_to_iso(dest_code)
 
     parcel.status         = STATUS_MAP.get(track.get("e"), Parcel.Status.PENDING)
     parcel.origin_country = iso_origin or str(origin_code)
-    parcel.dest_country   = iso_dest   or str(dest_code)
+    # Ne met à jour dest_country que si on a une vraie destination finale
+    if iso_dest:
+        parcel.dest_country = iso_dest
     parcel.carrier        = str(track.get("w1") or parcel.carrier or "")
     parcel.last_synced_at = timezone.now()
     parcel.save()
@@ -87,7 +99,7 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
         if not timestamp and not description:
             continue
 
-        event_obj, created = TrackingEvent.objects.get_or_create(  # ← DANS la boucle
+        event_obj, created = TrackingEvent.objects.get_or_create(
             parcel=parcel,
             timestamp=timestamp or timezone.now(),
             description=description,
@@ -100,6 +112,6 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
         )
 
         if created and location:
-            geocode_event.delay(event_obj.id)  # ← aussi DANS la boucle
+            geocode_event.delay(event_obj.id)
 
     return parcel
