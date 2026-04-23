@@ -58,7 +58,18 @@ const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 const GLOBE_RADIUS = 100;
 
-const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+// Couleurs boostées en LinearSRGB pour que chaque teinte passe le threshold=0
+// et bloome proportionnellement à sa luminance (rouge sombre → orange vif → jaune)
+const HEX_PALETTE_DARK = [
+  "#ff5500", // rouge-orange vif
+  "#ff7722", // orange
+  "#ff9944", // orange clair
+  "#ffbb33", // jaune-orange
+  "#dd3300", // rouge profond
+  "#ff6600", // orange pur
+  "#ee8800", // ambre
+  "#ff4411", // rouge-orange
+];
 const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
 
 function stableHexColor(featureIndex: number, isDark: boolean): string {
@@ -283,7 +294,7 @@ function buildManualGraticule(isDark: boolean): THREE.LineSegments {
   const mat = new THREE.LineBasicMaterial({
     color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
     transparent: true,
-    opacity: isDark ? 0.5 : 0.25,
+    opacity: isDark ? 0.45 : 0.25,
   });
   return new THREE.LineSegments(geo, mat);
 }
@@ -291,7 +302,7 @@ function buildManualGraticule(isDark: boolean): THREE.LineSegments {
 function updateManualGraticule(graticule: THREE.LineSegments, isDark: boolean) {
   const mat = graticule.material as THREE.LineBasicMaterial;
   mat.color.set(isDark ? "#ff6600" : "#0066cc");
-  mat.opacity = isDark ? 0.5 : 0.25;
+  mat.opacity = isDark ? 0.45 : 0.25;
   mat.needsUpdate = true;
 }
 
@@ -309,7 +320,6 @@ function applyTheme(
   globeMat.needsUpdate = true;
 
   globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
-
   updateManualGraticule(graticule, isDark);
 
   if (isDark) {
@@ -320,17 +330,20 @@ function applyTheme(
     renderer.setClearColor(0xffffff, 1);
   }
 
-  bloomPass.strength  = isDark ? 1.4 : 0.08;
-  bloomPass.threshold = isDark ? 0.15 : 0.85;
-  bloomPass.radius    = isDark ? 0.4  : 0.6;
+  // threshold=0 : tous les pixels blooment proportionnellement à leur luminance
+  // strength modéré pour ne pas saturer, radius pour diffusion douce
+  bloomPass.strength  = isDark ? 0.9 : 0.08;
+  bloomPass.threshold = isDark ? 0.0 : 0.85;
+  bloomPass.radius    = isDark ? 0.5 : 0.6;
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xff9944, 1.0);
+    // Ambient très faible pour laisser le bloom dominer sans saturer le fond
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    const dir = new THREE.DirectionalLight(0xff7722, 0.6);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -403,7 +416,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
 
-      // Guard: composant démonté pendant l'await
       if (destroyed || !containerRef.current) return;
 
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
@@ -435,7 +447,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
       const scene    = globe.scene() as THREE.Scene;
-      sceneRef.current  = scene;
+      sceneRef.current    = scene;
       rendererRef.current = renderer;
 
       if (isDark) {
@@ -451,8 +463,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       graticuleRef.current = graticule;
 
       if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dir = new THREE.DirectionalLight(0xff9944, 1.0);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+        const dir = new THREE.DirectionalLight(0xff7722, 0.6);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
         scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -481,9 +493,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        isDark ? 1.4 : 0.08,
-        isDark ? 0.4  : 0.6,
-        isDark ? 0.15 : 0.85,
+        isDark ? 0.9 : 0.08,  // strength
+        isDark ? 0.5 : 0.6,   // radius
+        isDark ? 0.0 : 0.85,  // threshold=0 → bloom proportionnel à la luminance
       );
       composer.addPass(bloom);
       bloomPassRef.current = bloom;
