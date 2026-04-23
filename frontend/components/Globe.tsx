@@ -239,7 +239,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
 
 /**
  * Force globe.gl to re-evaluate hex colors by re-passing the data array.
- * globe.pauseAnimation() ensures this never triggers a raw render outside the composer.
+ * renderer.render is a no-op at this point so no raw render bypasses the composer.
  */
 function refreshHexColors(globe: any, isDark: boolean) {
   const currentData: any[] = globe.hexPolygonsData() ?? [];
@@ -248,10 +248,6 @@ function refreshHexColors(globe: any, isDark: boolean) {
     .hexPolygonsData([...currentData]);
 }
 
-/**
- * Build a manual graticule LineSegments — meridians every 10deg, parallels every 10deg.
- * Fully owned by us, never touched by globe.gl.
- */
 function buildManualGraticule(isDark: boolean): THREE.LineSegments {
   const r = GLOBE_RADIUS + 0.2;
   const toRad = (d: number) => d * Math.PI / 180;
@@ -429,12 +425,15 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
-      // Stop globe.gl's internal RAF — our composer owns the render loop entirely.
-      // Without this, hexPolygonsData([...]) triggers a raw render bypassing postprocessing.
-      globe.pauseAnimation();
-
-      const scene = globe.scene() as THREE.Scene;
+      const renderer = globe.renderer() as THREE.WebGLRenderer;
+      const camera   = globe.camera() as THREE.Camera;
+      const scene    = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
+
+      // Hijack renderer.render so globe.gl's internal ticks are no-ops.
+      // Our animate() calls originalRender via composer — single render path, bloom always applied.
+      const originalRender = renderer.render.bind(renderer);
+      renderer.render = () => {};
 
       const graticule = buildManualGraticule(isDark);
       scene.add(graticule);
@@ -465,16 +464,17 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       });
       spritesRef.current = setupSprites(scene, transport);
 
-      const renderer = globe.renderer() as THREE.WebGLRenderer;
-      const camera = globe.camera() as THREE.Camera;
-
       const composer = new EffectComposer(renderer);
+      // Restore real render for composer's internal pipeline
+      renderer.render = originalRender;
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
         intensity: isDark ? 1.6 : 0.5,
         luminanceThreshold: isDark ? 0.15 : 0.35,
         luminanceSmoothing: 0.4, mipmapBlur: true,
       })));
+      // Neutralise again after composer setup — globe.gl's RAF is still running
+      renderer.render = () => {};
       composerRef.current = composer;
 
       const animate = () => {
@@ -526,7 +526,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
+        // Temporarily restore render so composer can execute its pipeline
+        renderer.render = originalRender;
         composer.render();
+        renderer.render = () => {};
       };
       animate();
     };
