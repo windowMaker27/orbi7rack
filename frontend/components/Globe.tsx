@@ -58,7 +58,6 @@ const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 const GLOBE_RADIUS = 100;
 
-// Palette hex orangée variée — contraste pays visible, pas de saturation blanche
 const HEX_PALETTE_DARK = [
   "#ff4400", "#ff5500", "#ff6600", "#ff7700",
   "#ff8800", "#ff9900", "#ffaa00", "#ee3300",
@@ -322,7 +321,6 @@ function applyTheme(
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setClearColor(isDark ? 0x000000 : 0xffffff, 1);
 
-  // Bloom doux : on ne cherche pas à forcer les hex, on bloom surtout la grille et l'atmosphère
   bloomPass.strength  = isDark ? 0.7  : 0.08;
   bloomPass.threshold = isDark ? 0.15 : 0.85;
   bloomPass.radius    = isDark ? 0.4  : 0.6;
@@ -332,7 +330,6 @@ function applyTheme(
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    // Ambient suffisant pour lire les hex sans les saturer
     scene.add(new THREE.AmbientLight(0xffffff, 0.4));
     const dir = new THREE.DirectionalLight(0xff5500, 0.6);
     dir.position.set(1, 1, 1); scene.add(dir);
@@ -488,11 +485,19 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       bloomPassRef.current = bloom;
       composerRef.current  = composer;
 
-      const originalRender = renderer.render.bind(renderer);
+      // Stopper la RAF loop interne de globe.gl pour prendre le contrôle total
+      globe.pauseAnimation();
 
-      const composerRender = (s: THREE.Scene, c: THREE.Camera) => {
-        if (s !== scene) { originalRender(s, c); return; }
+      const controls = globe.controls();
 
+      const tick = () => {
+        if (destroyed) return;
+        frameRef.current = requestAnimationFrame(tick);
+
+        // Mettre à jour l'autoRotate via controls
+        controls.update();
+
+        // Mise à jour position sprites
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
@@ -533,17 +538,16 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             alt: arc._curAlt!, hdg: arc._curHdg!,
           });
 
-          const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+          const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
-        renderer.render = originalRender;
+        // Rendu via composer (bloom permanent)
         composer.render();
-        renderer.render = composerRender;
       };
 
-      renderer.render = composerRender;
+      tick();
     };
 
     init();
