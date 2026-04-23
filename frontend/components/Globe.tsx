@@ -54,6 +54,7 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
 const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
+const GLOBE_RADIUS = 100; // globe.gl default
 
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
@@ -244,59 +245,75 @@ function applyHexColors(globe: any, isDark: boolean) {
 }
 
 /**
- * Tag all Line/LineSegments in scene as graticules at init.
- * Called once after globe.gl has rendered its first frame.
+ * Build a manual graticule LineSegments — meridians every 10deg, parallels every 10deg.
+ * Fully owned by us, never touched by globe.gl.
  */
-function tagGraticules(scene: THREE.Scene, isDark: boolean) {
-  scene.traverse((obj: any) => {
-    if ((obj.isLine || obj.isLineSegments) && !obj.__isGraticule) {
-      obj.__isGraticule = true;
-      obj.material = new THREE.LineBasicMaterial({
-        color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
-        transparent: true,
-        opacity: 0.5,
-      });
+function buildManualGraticule(isDark: boolean): THREE.LineSegments {
+  const r = GLOBE_RADIUS + 0.2; // just above surface
+  const toRad = (d: number) => d * Math.PI / 180;
+  const vertices: number[] = [];
+  const SEGMENTS = 64;
+
+  // Meridians (every 10deg longitude)
+  for (let lng = -180; lng < 180; lng += 10) {
+    const l = toRad(lng);
+    for (let i = 0; i < SEGMENTS; i++) {
+      const lat1 = -90 + (180 * i) / SEGMENTS;
+      const lat2 = -90 + (180 * (i + 1)) / SEGMENTS;
+      const f1 = toRad(lat1), f2 = toRad(lat2);
+      vertices.push(
+        r * Math.cos(f1) * Math.cos(l), r * Math.sin(f1), r * Math.cos(f1) * Math.sin(l),
+        r * Math.cos(f2) * Math.cos(l), r * Math.sin(f2), r * Math.cos(f2) * Math.sin(l),
+      );
     }
+  }
+
+  // Parallels (every 10deg latitude)
+  for (let lat = -80; lat <= 80; lat += 10) {
+    const f = toRad(lat);
+    for (let i = 0; i < SEGMENTS; i++) {
+      const lng1 = -180 + (360 * i) / SEGMENTS;
+      const lng2 = -180 + (360 * (i + 1)) / SEGMENTS;
+      const l1 = toRad(lng1), l2 = toRad(lng2);
+      vertices.push(
+        r * Math.cos(f) * Math.cos(l1), r * Math.sin(f), r * Math.cos(f) * Math.sin(l1),
+        r * Math.cos(f) * Math.cos(l2), r * Math.sin(f), r * Math.cos(f) * Math.sin(l2),
+      );
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color: new THREE.Color(isDark ? "#ff6600" : "#0066cc"),
+    transparent: true,
+    opacity: 0.5,
   });
+  return new THREE.LineSegments(geo, mat);
 }
 
-/**
- * On theme switch: re-traverse scene, update ONLY tagged graticules.
- * Any new Line created by globe.gl (hex edges) won't have __isGraticule
- * and will be tagged + colored on the next call.
- */
-function updateGraticules(scene: THREE.Scene, isDark: boolean) {
-  const gratColor = new THREE.Color(isDark ? "#ff6600" : "#0066cc");
-  scene.traverse((obj: any) => {
-    if (obj.__isGraticule && obj.material) {
-      obj.material.color.copy(gratColor);
-      obj.material.needsUpdate = true;
-    } else if ((obj.isLine || obj.isLineSegments) && !obj.__isGraticule) {
-      // New Line created by globe.gl after init — tag it now
-      obj.__isGraticule = true;
-      obj.material = new THREE.LineBasicMaterial({
-        color: gratColor,
-        transparent: true,
-        opacity: 1.0,
-      });
-    }
-  });
+function updateManualGraticule(graticule: THREE.LineSegments, isDark: boolean) {
+  const mat = graticule.material as THREE.LineBasicMaterial;
+  mat.color.set(isDark ? "#ff6600" : "#0066cc");
+  mat.opacity = 0.5;
+  mat.needsUpdate = true;
 }
 
 function applyTheme(
   globe: any,
   scene: THREE.Scene,
   globeMat: THREE.MeshPhongMaterial,
+  graticule: THREE.LineSegments,
   isDark: boolean,
 ) {
-  // Mutate existing material — never replace it (replacement triggers globe.gl mesh rebuild)
+  // Mutate material in place — never replace
   globeMat.color.set(isDark ? "#0d0000" : "#dde8f0");
   globeMat.emissive.set(isDark ? "#0a0000" : "#c8dcea");
   globeMat.needsUpdate = true;
 
   globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
 
-  updateGraticules(scene, isDark);
+  updateManualGraticule(graticule, isDark);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -327,17 +344,18 @@ function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Spr
 }
 
 export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {}, theme = "dark" }: GlobeProps) {
-  const containerRef    = useRef<HTMLDivElement>(null);
-  const composerRef     = useRef<EffectComposer | null>(null);
-  const frameRef        = useRef<number>(0);
-  const pendingRef      = useRef<Parcel[]>(parcels);
-  const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
-  const sceneRef        = useRef<THREE.Scene | null>(null);
-  const globeMatRef     = useRef<THREE.MeshPhongMaterial | null>(null);
-  const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
-  const positionModeRef = useRef<PositionModeMap>(positionMode);
-  const themeRef        = useRef<Theme>(theme);
-  const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
+  const containerRef     = useRef<HTMLDivElement>(null);
+  const composerRef      = useRef<EffectComposer | null>(null);
+  const frameRef         = useRef<number>(0);
+  const pendingRef       = useRef<Parcel[]>(parcels);
+  const spritesRef       = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
+  const sceneRef         = useRef<THREE.Scene | null>(null);
+  const globeMatRef      = useRef<THREE.MeshPhongMaterial | null>(null);
+  const graticuleRef     = useRef<THREE.LineSegments | null>(null);
+  const flightPosRef     = useRef<FlightPositionMap>(flightPositions);
+  const positionModeRef  = useRef<PositionModeMap>(positionMode);
+  const themeRef         = useRef<Theme>(theme);
+  const spriteStateRef   = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -345,10 +363,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   useEffect(() => {
     pendingRef.current = parcels;
-    if (!globeRef.current || !sceneRef.current || !globeMatRef.current) return;
+    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current) return;
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
-    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, isDark);
+    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, isDark);
 
     const prevState = spriteStateRef.current;
     spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
@@ -356,10 +374,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     newTransport.forEach((arc: any) => {
       const saved = prevState.get(arc.id);
       if (saved) {
-        arc._curLat = saved.lat;
-        arc._curLng = saved.lng;
-        arc._curAlt = saved.alt;
-        arc._curHdg = saved.hdg;
+        arc._curLat = saved.lat; arc._curLng = saved.lng;
+        arc._curAlt = saved.alt; arc._curHdg = saved.hdg;
       }
     });
     spritesRef.current = setupSprites(sceneRef.current, newTransport);
@@ -388,7 +404,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
 
-      // Create the globe material once — it will be mutated in place on theme switch
       const globeMat = new THREE.MeshPhongMaterial({
         color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
         emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
@@ -402,7 +417,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
-        .showGraticules(true)
+        .showGraticules(false)          // disabled — we draw our own
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
         .atmosphereAltitude(0.12)
         .globeMaterial(globeMat)
@@ -416,9 +431,14 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
+      // Manual graticule — fully ours, never rebuilt by globe.gl
+      const graticule = buildManualGraticule(isDark);
+      scene.add(graticule);
+      graticuleRef.current = graticule;
+
       if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-        const dir = new THREE.DirectionalLight(0xff9944, 0.8);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dir = new THREE.DirectionalLight(0xff9944, 1.0);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -429,17 +449,13 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
-      // Tag graticules after first render — hex polygons take ~300ms to appear
-      setTimeout(() => tagGraticules(scene, isDark), 600);
-
       globeRef.current = globe;
       applyData(globe, pendingRef.current, isDark, flightPosRef.current);
 
       const transport = buildData(pendingRef.current, isDark, flightPosRef.current).transport as any[];
       transport.forEach((arc: any) => {
         const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-        arc._curLat = midLat;
-        arc._curLng = midLng;
+        arc._curLat = midLat; arc._curLng = midLng;
         arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
         arc._curHdg = 0;
       });
@@ -472,9 +488,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           if (livePos?.lat != null && livePos?.lng != null) {
             const rawProgress = livePos.progress;
             const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-              ? Math.max(0.05, Math.min(0.95, rawProgress))
-              : 0.5;
-
+              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
             if (mode === "live") {
               targetLat = livePos.lat; targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
@@ -489,10 +503,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           }
 
           if (arc._curLat === null) {
-            arc._curLat = targetLat;
-            arc._curLng = targetLng;
-            arc._curAlt = targetAlt;
-            arc._curHdg = targetHdg ?? 0;
+            arc._curLat = targetLat; arc._curLng = targetLng;
+            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
           }
 
           arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
