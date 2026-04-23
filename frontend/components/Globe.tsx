@@ -2,7 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { EffectComposer, EffectPass, RenderPass, BloomEffect } from "postprocessing";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import type { Parcel } from "@/hooks/useParcels";
 import type { FlightPositionMap, PositionModeMap } from "@/hooks/useFlightPositions";
 import type { Theme } from "@/context/ThemeContext";
@@ -237,10 +239,6 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
 }
 
-/**
- * Force globe.gl to re-evaluate hex colors by re-passing the data array.
- * renderer.render is a no-op at this point so no raw render bypasses the composer.
- */
 function refreshHexColors(globe: any, isDark: boolean) {
   const currentData: any[] = globe.hexPolygonsData() ?? [];
   globe
@@ -302,6 +300,7 @@ function applyTheme(
   scene: THREE.Scene,
   globeMat: THREE.MeshPhongMaterial,
   graticule: THREE.LineSegments,
+  bloomPass: UnrealBloomPass,
   isDark: boolean,
 ) {
   globeMat.color.set(isDark ? "#0d0000" : "#dde8f0");
@@ -311,6 +310,9 @@ function applyTheme(
   globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
 
   updateManualGraticule(graticule, isDark);
+
+  bloomPass.strength  = isDark ? 1.6 : 0.5;
+  bloomPass.threshold = isDark ? 0.15 : 0.35;
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -341,18 +343,19 @@ function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Spr
 }
 
 export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {}, theme = "dark" }: GlobeProps) {
-  const containerRef     = useRef<HTMLDivElement>(null);
-  const composerRef      = useRef<EffectComposer | null>(null);
-  const frameRef         = useRef<number>(0);
-  const pendingRef       = useRef<Parcel[]>(parcels);
-  const spritesRef       = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
-  const sceneRef         = useRef<THREE.Scene | null>(null);
-  const globeMatRef      = useRef<THREE.MeshPhongMaterial | null>(null);
-  const graticuleRef     = useRef<THREE.LineSegments | null>(null);
-  const flightPosRef     = useRef<FlightPositionMap>(flightPositions);
-  const positionModeRef  = useRef<PositionModeMap>(positionMode);
-  const themeRef         = useRef<Theme>(theme);
-  const spriteStateRef   = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const composerRef     = useRef<EffectComposer | null>(null);
+  const bloomPassRef    = useRef<UnrealBloomPass | null>(null);
+  const frameRef        = useRef<number>(0);
+  const pendingRef      = useRef<Parcel[]>(parcels);
+  const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
+  const sceneRef        = useRef<THREE.Scene | null>(null);
+  const globeMatRef     = useRef<THREE.MeshPhongMaterial | null>(null);
+  const graticuleRef    = useRef<THREE.LineSegments | null>(null);
+  const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
+  const positionModeRef = useRef<PositionModeMap>(positionMode);
+  const themeRef        = useRef<Theme>(theme);
+  const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -360,10 +363,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   useEffect(() => {
     pendingRef.current = parcels;
-    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current) return;
+    if (!globeRef.current || !sceneRef.current || !globeMatRef.current || !graticuleRef.current || !bloomPassRef.current) return;
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
-    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, isDark);
+    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, graticuleRef.current, bloomPassRef.current, isDark);
 
     const prevState = spriteStateRef.current;
     spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
@@ -376,18 +379,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       }
     });
     spritesRef.current = setupSprites(sceneRef.current, newTransport);
-
-    if (composerRef.current) {
-      const passes = (composerRef.current as any).passes as any[];
-      const effectPass = passes.find((p: any) => p instanceof EffectPass);
-      if (effectPass) {
-        const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
-        if (bloom) {
-          bloom.intensity = isDark ? 1.6 : 0.5;
-          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.15 : 0.35;
-        }
-      }
-    }
   }, [parcels, theme, globeRef, flightPositions]);
 
   useEffect(() => {
@@ -425,15 +416,14 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
+      // globe.gl owns its own RAF — we don't touch it.
+      // We plug our composer on top: each frame, composer.render() replaces
+      // globe.gl's native renderer.render(scene, camera) call via RenderPass.
+
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera   = globe.camera() as THREE.Camera;
       const scene    = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
-
-      // Hijack renderer.render so globe.gl's internal ticks are no-ops.
-      // Our animate() calls originalRender via composer — single render path, bloom always applied.
-      const originalRender = renderer.render.bind(renderer);
-      renderer.render = () => {};
 
       const graticule = buildManualGraticule(isDark);
       scene.add(graticule);
@@ -464,82 +454,99 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       });
       spritesRef.current = setupSprites(scene, transport);
 
+      // Three.js JSM composer — stable, no conflict with globe.gl's RAF
+      const w = containerRef.current!.clientWidth;
+      const h = containerRef.current!.clientHeight;
       const composer = new EffectComposer(renderer);
-      // Restore real render for composer's internal pipeline
-      renderer.render = originalRender;
       composer.addPass(new RenderPass(scene, camera));
-      composer.addPass(new EffectPass(camera, new BloomEffect({
-        intensity: isDark ? 1.6 : 0.5,
-        luminanceThreshold: isDark ? 0.15 : 0.35,
-        luminanceSmoothing: 0.4, mipmapBlur: true,
-      })));
-      // Neutralise again after composer setup — globe.gl's RAF is still running
-      renderer.render = () => {};
-      composerRef.current = composer;
+      const bloom = new UnrealBloomPass(
+        new THREE.Vector2(w, h),
+        isDark ? 1.6 : 0.5,   // strength
+        0.4,                    // radius
+        isDark ? 0.15 : 0.35,  // threshold
+      );
+      composer.addPass(bloom);
+      bloomPassRef.current  = bloom;
+      composerRef.current   = composer;
 
-      const animate = () => {
-        frameRef.current = requestAnimationFrame(animate);
-        globe.controls().update();
+      // Override globe.gl's per-frame render with our composer
+      // globe.gl calls renderer.render(scene, camera) inside its own RAF.
+      // We replace that with composer.render() so bloom is applied every frame.
+      const originalRender = renderer.render.bind(renderer);
+      renderer.render = (s: THREE.Scene, c: THREE.Camera) => {
+        if (s === scene) {
+          // Update sprites before composer fires
+          spritesRef.current.forEach(({ sprite, arc }) => {
+            if (!arc) return;
+            const livePos = flightPosRef.current[arc.id];
+            const mode = positionModeRef.current[arc.id] ?? "arc";
 
-        spritesRef.current.forEach(({ sprite, arc }) => {
-          if (!arc) return;
-          const livePos = flightPosRef.current[arc.id];
-          const mode = positionModeRef.current[arc.id] ?? "arc";
+            let targetLat: number, targetLng: number, targetAlt: number;
+            let targetHdg: number | null = null;
 
-          let targetLat: number, targetLng: number, targetAlt: number;
-          let targetHdg: number | null = null;
-
-          if (livePos?.lat != null && livePos?.lng != null) {
-            const rawProgress = livePos.progress;
-            const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-            if (mode === "live") {
-              targetLat = livePos.lat; targetLng = livePos.lng;
-              targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+            if (livePos?.lat != null && livePos?.lng != null) {
+              const rawProgress = livePos.progress;
+              const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
+                ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
+              if (mode === "live") {
+                targetLat = livePos.lat; targetLng = livePos.lng;
+                targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
+              } else {
+                [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
+                targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+              }
+              targetHdg = livePos.heading ?? null;
             } else {
-              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
-              targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
+              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+              targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
             }
-            targetHdg = livePos.heading ?? null;
-          } else {
-            [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-            targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
-          }
 
-          if (arc._curLat === null) {
-            arc._curLat = targetLat; arc._curLng = targetLng;
-            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
-          }
+            if (arc._curLat === null) {
+              arc._curLat = targetLat; arc._curLng = targetLng;
+              arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
+            }
 
-          arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
-          arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
-          arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
-          if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
+            arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
+            arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
+            arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
+            if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
-          spriteStateRef.current.set(arc.id, {
-            lat: arc._curLat!, lng: arc._curLng!,
-            alt: arc._curAlt!, hdg: arc._curHdg!,
+            spriteStateRef.current.set(arc.id, {
+              lat: arc._curLat!, lng: arc._curLng!,
+              alt: arc._curAlt!, hdg: arc._curHdg!,
+            });
+
+            const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+            sprite.position.set(coords.x, coords.y, coords.z);
+            (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
           });
 
-          const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-          sprite.position.set(coords.x, coords.y, coords.z);
-          (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
-        });
-
-        // Temporarily restore render so composer can execute its pipeline
-        renderer.render = originalRender;
-        composer.render();
-        renderer.render = () => {};
+          // Temporarily restore so composer's internal passes can call render
+          renderer.render = originalRender;
+          composer.render();
+          renderer.render = (s2: THREE.Scene, c2: THREE.Camera) => {
+            if (s2 === scene) {
+              renderer.render = originalRender;
+              composer.render();
+              renderer.render = arguments.callee as any;
+            } else {
+              originalRender(s2, c2);
+            }
+          };
+        } else {
+          originalRender(s, c);
+        }
       };
-      animate();
     };
 
     init();
 
     const handleResize = () => {
       if (globeRef.current && containerRef.current) {
-        globeRef.current.width(containerRef.current.clientWidth).height(containerRef.current.clientHeight);
-        composerRef.current?.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        globeRef.current.width(w).height(h);
+        composerRef.current?.setSize(w, h);
       }
     };
     window.addEventListener("resize", handleResize);
