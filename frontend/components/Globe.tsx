@@ -44,11 +44,12 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
   NZ:[-40.90,174.88],PH:[12.87,121.77],PK:[30.37,69.34],PL:[51.91,19.14],PT:[39.39,-8.22],
   RO:[45.94,24.96],RU:[61.52,105.31],SA:[23.88,45.07],SE:[60.12,18.64],SG:[1.35,103.81],
   TH:[15.87,100.99],TR:[38.96,35.24],TW:[23.69,120.96],UA:[48.37,31.16],US:[37.09,-95.71],
-  VN:[14.05,108.27],ZA:[-28.47,24.67],
+  VN:[14.05,108.27],ZA:[-28.47,24.67],RE:[-21.11,55.53],
   CDG:[49.0097,2.5479],PEK:[40.0799,116.6031],PVG:[31.1443,121.8083],
-  HND:[35.5494,139.7798],ICN:[37.4602,126.4407],DXB:[25.2532,55.3657],
+  HND:[35.5494,139.7798],NRT:[35.7647,140.3864],ICN:[37.4602,126.4407],DXB:[25.2532,55.3657],
   LHR:[51.4775,-0.4614],JFK:[40.6413,-73.7781],LAX:[33.9425,-118.4081],
   SIN:[1.3644,103.9915],HKG:[22.3080,113.9185],
+  RUN:[-20.8872,55.5136],FRA:[50.0379,8.5622],CPT:[-33.9715,18.6021],
 };
 
 const ARC_ALTITUDE = 0.25;
@@ -100,10 +101,17 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
+/**
+ * Résout les endpoints FIXES de l'arc (départ et arrivée aéroport/pays).
+ * N'utilise JAMAIS flightPos.destination — la destination est toujours
+ * le centroïde de parcel.dest_country pour que l'arc pointe vers la bonne cible.
+ * flightPos.origin peut enrichir le point de départ si disponible.
+ */
 function resolveEndpoints(
   parcel: Parcel,
-  flightPos: { origin?: { lat: number; lng: number }; destination?: { lat: number; lng: number } } | undefined,
+  flightPos: { origin?: { lat: number; lng: number } } | undefined,
 ): { origin: [number, number] | null; destination: [number, number] | null } {
+  // Origine : aéroport live si dispo, sinon centroïde origin_country
   let origin: [number, number] | null = null;
   if (flightPos?.origin?.lat != null && flightPos?.origin?.lng != null) {
     origin = [flightPos.origin.lat, flightPos.origin.lng];
@@ -111,16 +119,8 @@ function resolveEndpoints(
     origin = getCentroid(parcel.origin_country);
   }
 
-  let destination: [number, number] | null = null;
-  if (flightPos?.destination?.lat != null && flightPos?.destination?.lng != null) {
-    destination = [flightPos.destination.lat, flightPos.destination.lng];
-  } else {
-    destination = getCentroid(parcel.dest_country);
-  }
-
-  if (!destination && parcel.estimated_position) {
-    destination = [parcel.estimated_position.lat, parcel.estimated_position.lng];
-  }
+  // Destination : TOUJOURS le centroïde de dest_country (aéroport fixe)
+  const destination: [number, number] | null = getCentroid(parcel.dest_country);
 
   return { origin, destination };
 }
@@ -152,7 +152,15 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       });
     }
 
-    if (!fp && p.estimated_position) {
+    // Point position live du vol si dispo
+    if (fp?.lat != null && fp?.lng != null) {
+      points.push({
+        lat: fp.lat, lng: fp.lng,
+        label: p.tracking_number,
+        status: p.status, description: p.description,
+        color, altitude: 0.04, radius: 0.2,
+      });
+    } else if (p.estimated_position) {
       points.push({
         lat: p.estimated_position.lat, lng: p.estimated_position.lng,
         label: p.tracking_number,
@@ -307,7 +315,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   positionModeRef.current = positionMode;
   themeRef.current        = theme;
 
-  // Re-render arc + points quand parcels OU flightPositions changent
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
