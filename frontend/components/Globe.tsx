@@ -54,7 +54,7 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
 const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
-const GLOBE_RADIUS = 100; // globe.gl default
+const GLOBE_RADIUS = 100;
 
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 const HEX_PALETTE_LIGHT = ["#003399","#0055ff","#0088cc","#0099dd","#0033cc","#0066ff","#2277cc","#1a44bb"];
@@ -237,11 +237,15 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
 }
 
-function applyHexColors(globe: any, isDark: boolean) {
-  globe.hexPolygonColor((feat: any) => {
-    const idx: number = feat.__hexIdx ?? 0;
-    return stableHexColor(idx, isDark);
-  });
+/**
+ * Force globe.gl to re-evaluate hex colors by re-setting both the color
+ * callback AND re-passing the existing data array (new ref = redraw triggered).
+ */
+function refreshHexColors(globe: any, isDark: boolean) {
+  const currentData: any[] = globe.hexPolygonsData() ?? [];
+  globe
+    .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
+    .hexPolygonsData([...currentData]);
 }
 
 /**
@@ -249,12 +253,11 @@ function applyHexColors(globe: any, isDark: boolean) {
  * Fully owned by us, never touched by globe.gl.
  */
 function buildManualGraticule(isDark: boolean): THREE.LineSegments {
-  const r = GLOBE_RADIUS + 0.2; // just above surface
+  const r = GLOBE_RADIUS + 0.2;
   const toRad = (d: number) => d * Math.PI / 180;
   const vertices: number[] = [];
   const SEGMENTS = 64;
 
-  // Meridians (every 10deg longitude)
   for (let lng = -180; lng < 180; lng += 10) {
     const l = toRad(lng);
     for (let i = 0; i < SEGMENTS; i++) {
@@ -268,7 +271,6 @@ function buildManualGraticule(isDark: boolean): THREE.LineSegments {
     }
   }
 
-  // Parallels (every 10deg latitude)
   for (let lat = -80; lat <= 80; lat += 10) {
     const f = toRad(lat);
     for (let i = 0; i < SEGMENTS; i++) {
@@ -306,7 +308,6 @@ function applyTheme(
   graticule: THREE.LineSegments,
   isDark: boolean,
 ) {
-  // Mutate material in place — never replace
   globeMat.color.set(isDark ? "#0d0000" : "#dde8f0");
   globeMat.emissive.set(isDark ? "#0a0000" : "#c8dcea");
   globeMat.needsUpdate = true;
@@ -329,7 +330,8 @@ function applyTheme(
     dir.position.set(1, 1, 1); scene.add(dir);
   }
 
-  applyHexColors(globe, isDark);
+  // Force globe.gl to redraw hex polygons with updated colors
+  refreshHexColors(globe, isDark);
 }
 
 function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
@@ -417,7 +419,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
-        .showGraticules(false)          // disabled — we draw our own
+        .showGraticules(false)
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
         .atmosphereAltitude(0.12)
         .globeMaterial(globeMat)
@@ -431,7 +433,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
-      // Manual graticule — fully ours, never rebuilt by globe.gl
       const graticule = buildManualGraticule(isDark);
       scene.add(graticule);
       graticuleRef.current = graticule;
