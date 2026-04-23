@@ -243,13 +243,42 @@ function applyHexColors(globe: any, isDark: boolean) {
   });
 }
 
-/** Met à jour la couleur des graticules à partir des références stockées à l'init. */
-function updateGraticules(graticuleRefs: THREE.Object3D[], isDark: boolean) {
-  const color = new THREE.Color(isDark ? "#993300" : "#0044aa");
-  graticuleRefs.forEach((obj: any) => {
-    if (obj.material) {
-      obj.material.color.copy(color);
+/**
+ * Tag all Line/LineSegments in scene as graticules at init.
+ * Called once after globe.gl has rendered its first frame.
+ */
+function tagGraticules(scene: THREE.Scene, isDark: boolean) {
+  scene.traverse((obj: any) => {
+    if ((obj.isLine || obj.isLineSegments) && !obj.__isGraticule) {
+      obj.__isGraticule = true;
+      obj.material = new THREE.LineBasicMaterial({
+        color: new THREE.Color(isDark ? "#993300" : "#004488"),
+        transparent: true,
+        opacity: 0.3,
+      });
+    }
+  });
+}
+
+/**
+ * On theme switch: re-traverse scene, update ONLY tagged graticules.
+ * Any new Line created by globe.gl (hex edges) won't have __isGraticule
+ * and will be tagged + colored on the next call.
+ */
+function updateGraticules(scene: THREE.Scene, isDark: boolean) {
+  const gratColor = new THREE.Color(isDark ? "#993300" : "#004488");
+  scene.traverse((obj: any) => {
+    if (obj.__isGraticule && obj.material) {
+      obj.material.color.copy(gratColor);
       obj.material.needsUpdate = true;
+    } else if ((obj.isLine || obj.isLineSegments) && !obj.__isGraticule) {
+      // New Line created by globe.gl after init — tag it now
+      obj.__isGraticule = true;
+      obj.material = new THREE.LineBasicMaterial({
+        color: gratColor,
+        transparent: true,
+        opacity: 0.3,
+      });
     }
   });
 }
@@ -257,19 +286,17 @@ function updateGraticules(graticuleRefs: THREE.Object3D[], isDark: boolean) {
 function applyTheme(
   globe: any,
   scene: THREE.Scene,
+  globeMat: THREE.MeshPhongMaterial,
   isDark: boolean,
-  graticuleRefs: THREE.Object3D[],
 ) {
-  globe
-    .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
-    .globeMaterial(new THREE.MeshPhongMaterial({
-      color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-      emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
-      transparent: true, opacity: 0.95,
-    }));
+  // Mutate existing material — never replace it (replacement triggers globe.gl mesh rebuild)
+  globeMat.color.set(isDark ? "#0d0000" : "#dde8f0");
+  globeMat.emissive.set(isDark ? "#0a0000" : "#c8dcea");
+  globeMat.needsUpdate = true;
 
-  // Uniquement les graticules stockés à l'init — jamais les hex
-  updateGraticules(graticuleRefs, isDark);
+  globe.atmosphereColor(isDark ? "#ff6600" : "#0066cc");
+
+  updateGraticules(scene, isDark);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -306,12 +333,11 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const pendingRef      = useRef<Parcel[]>(parcels);
   const spritesRef      = useRef<{ sprite: THREE.Sprite; arc: any }[]>([]);
   const sceneRef        = useRef<THREE.Scene | null>(null);
+  const globeMatRef     = useRef<THREE.MeshPhongMaterial | null>(null);
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
-  // Références des objets graticule capturées une seule fois à l'init
-  const graticuleRefsRef = useRef<THREE.Object3D[]>([]);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -319,25 +345,25 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   useEffect(() => {
     pendingRef.current = parcels;
-    if (!globeRef.current) return;
+    if (!globeRef.current || !sceneRef.current || !globeMatRef.current) return;
     const isDark = theme === "dark";
     applyData(globeRef.current, parcels, isDark, flightPositions);
-    if (sceneRef.current) {
-      applyTheme(globeRef.current, sceneRef.current, isDark, graticuleRefsRef.current);
-      const prevState = spriteStateRef.current;
-      spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-      const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
-      newTransport.forEach((arc: any) => {
-        const saved = prevState.get(arc.id);
-        if (saved) {
-          arc._curLat = saved.lat;
-          arc._curLng = saved.lng;
-          arc._curAlt = saved.alt;
-          arc._curHdg = saved.hdg;
-        }
-      });
-      spritesRef.current = setupSprites(sceneRef.current, newTransport);
-    }
+    applyTheme(globeRef.current, sceneRef.current, globeMatRef.current, isDark);
+
+    const prevState = spriteStateRef.current;
+    spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
+    const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
+    newTransport.forEach((arc: any) => {
+      const saved = prevState.get(arc.id);
+      if (saved) {
+        arc._curLat = saved.lat;
+        arc._curLng = saved.lng;
+        arc._curAlt = saved.alt;
+        arc._curHdg = saved.hdg;
+      }
+    });
+    spritesRef.current = setupSprites(sceneRef.current, newTransport);
+
     if (composerRef.current) {
       const passes = (composerRef.current as any).passes as any[];
       const effectPass = passes.find((p: any) => p instanceof EffectPass);
@@ -362,6 +388,14 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
 
+      // Create the globe material once — it will be mutated in place on theme switch
+      const globeMat = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
+        emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+        transparent: true, opacity: 0.95,
+      });
+      globeMatRef.current = globeMat;
+
       const globe = (GlobeGL as any)(
         { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
       )(containerRef.current)
@@ -371,11 +405,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .showGraticules(true)
         .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
         .atmosphereAltitude(0.12)
-        .globeMaterial(new THREE.MeshPhongMaterial({
-          color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-          emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
-          transparent: true, opacity: 0.95,
-        }))
+        .globeMaterial(globeMat)
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
@@ -399,21 +429,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
-      // Init : capturer les références des graticules UNE SEULE FOIS
-      // et leur appliquer le bon matériau. Les hex sont des Mesh, pas des Line.
-      setTimeout(() => {
-        const refs: THREE.Object3D[] = [];
-        scene.traverse((obj: any) => {
-          if (obj.isLine || obj.isLineSegments) {
-            obj.material = new THREE.LineBasicMaterial({
-              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-              transparent: true, opacity: 0.25,
-            });
-            refs.push(obj);
-          }
-        });
-        graticuleRefsRef.current = refs;
-      }, 500);
+      // Tag graticules after first render — hex polygons take ~300ms to appear
+      setTimeout(() => tagGraticules(scene, isDark), 600);
 
       globeRef.current = globe;
       applyData(globe, pendingRef.current, isDark, flightPosRef.current);
