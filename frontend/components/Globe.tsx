@@ -12,24 +12,16 @@ interface GlobeProps {
   globeRef: React.MutableRefObject<any>;
   flightPositions?: FlightPositionMap;
   positionMode?: PositionModeMap;
-  theme?: Theme;
+  theme?: Theme; // conservé pour le switch UI, mais le globe est toujours dark
 }
 
-const STATUS_COLORS_DARK: Record<string, string> = {
+// Couleurs statuts — toujours dark, vives sur fond sombre
+const STATUS_COLORS: Record<string, string> = {
   pending: "#ffaa00",
   in_transit: "#00cfff",
   out_for_delivery: "#00ff99",
   delivered: "#44ff44",
   exception: "#ff2222",
-  expired: "#888888",
-};
-
-const STATUS_COLORS_LIGHT: Record<string, string> = {
-  pending: "#b86e00",
-  in_transit: "#0055aa",
-  out_for_delivery: "#007a44",
-  delivered: "#2a7a00",
-  exception: "#cc2200",
   expired: "#888888",
 };
 
@@ -56,12 +48,11 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-const HEX_PALETTE_LIGHT = ["#0044aa","#0066cc","#1177dd","#2255bb","#3388ee","#0055bb","#1166cc","#0077dd"];
+// Palette hexagones — dark uniquement
+const HEX_PALETTE = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-function stableHexColor(featureIndex: number, isDark: boolean): string {
-  const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
-  return palette[featureIndex % palette.length];
+function stableHexColor(featureIndex: number): string {
+  return HEX_PALETTE[featureIndex % HEX_PALETTE.length];
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -102,37 +93,30 @@ function lerpAngle(current:number,target:number,t:number):number{
 }
 
 /**
- * Résout les endpoints FIXES de l'arc (départ et arrivée aéroport/pays).
- * N'utilise JAMAIS flightPos.destination — la destination est toujours
- * le centroïde de parcel.dest_country pour que l'arc pointe vers la bonne cible.
- * flightPos.origin peut enrichir le point de départ si disponible.
+ * Résout les endpoints FIXES de l'arc.
+ * Destination = toujours centroïde de dest_country.
+ * flightPos.origin peut enrichir le départ si disponible.
  */
 function resolveEndpoints(
   parcel: Parcel,
   flightPos: { origin?: { lat: number; lng: number } } | undefined,
 ): { origin: [number, number] | null; destination: [number, number] | null } {
-  // Origine : aéroport live si dispo, sinon centroïde origin_country
   let origin: [number, number] | null = null;
   if (flightPos?.origin?.lat != null && flightPos?.origin?.lng != null) {
     origin = [flightPos.origin.lat, flightPos.origin.lng];
   } else {
     origin = getCentroid(parcel.origin_country);
   }
-
-  // Destination : TOUJOURS le centroïde de dest_country (aéroport fixe)
   const destination: [number, number] | null = getCentroid(parcel.dest_country);
-
   return { origin, destination };
 }
 
-function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
-  const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
-
+function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
   const points: any[] = [];
   parcels.forEach(p => {
     const fp = flightPositions[p.id];
     const { origin, destination } = resolveEndpoints(p, fp);
-    const color = SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e");
+    const color = STATUS_COLORS[p.status] ?? "#ffffff";
 
     if (origin) {
       points.push({
@@ -152,7 +136,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       });
     }
 
-    // Point position live du vol si dispo
     if (fp?.lat != null && fp?.lng != null) {
       points.push({
         lat: fp.lat, lng: fp.lng,
@@ -179,7 +162,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       return {
         startLat: origin[0], startLng: origin[1],
         endLat: destination[0], endLng: destination[1],
-        color: SC[p.status] ?? "#ffffff",
+        color: STATUS_COLORS[p.status] ?? "#ffffff",
         label: p.tracking_number,
       };
     }).filter(Boolean);
@@ -190,7 +173,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       const fp = flightPositions[p.id];
       const pos = (fp?.lat != null && fp?.lng != null) ? { lat: fp.lat, lng: fp.lng } : p.estimated_position;
       if (!pos) return null;
-      return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
+      return { lat: pos.lat, lng: pos.lng, color: STATUS_COLORS[p.status] ?? "#fff" };
     }).filter(Boolean);
 
   const transport = parcels
@@ -203,7 +186,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         id: p.id,
         startLat: origin[0], startLng: origin[1],
         endLat: destination[0], endLng: destination[1],
-        color: SC[p.status] ?? "#fff",
+        color: STATUS_COLORS[p.status] ?? "#fff",
         emoji: p.status === "out_for_delivery" ? "\ud83d\ude9a" : "\u2708\ufe0f",
         _curLat: null as number | null, _curLng: null as number | null,
         _curAlt: null as number | null, _curHdg: null as number | null,
@@ -213,8 +196,8 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
   return { points, arcs, rings, transport };
 }
 
-function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
-  const { points, arcs, rings } = buildData(parcels, isDark, flightPositions);
+function applyData(globe: any, parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
+  const { points, arcs, rings } = buildData(parcels, flightPositions);
 
   globe
     .pointsData(points)
@@ -244,50 +227,6 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
 }
 
-function applyHexColors(globe: any, isDark: boolean) {
-  globe.hexPolygonColor((feat: any) => {
-    const idx: number = feat.__hexIdx ?? 0;
-    return stableHexColor(idx, isDark);
-  });
-}
-
-function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
-  globe
-    .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
-    .globeMaterial(new THREE.MeshPhongMaterial({
-      color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-      emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
-      transparent: true, opacity: 0.95,
-    }));
-
-  setTimeout(() => {
-    scene.traverse((obj: any) => {
-      if (obj.isLine || obj.isLineSegments) {
-        if (obj.material) obj.material = new THREE.LineBasicMaterial({
-          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-          transparent: true, opacity: 0.25,
-        });
-      }
-    });
-  }, 50);
-
-  const toRemove: THREE.Object3D[] = [];
-  scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
-  toRemove.forEach(l => scene.remove(l));
-
-  if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-    const dir = new THREE.DirectionalLight(0xff9944, 0.8);
-    dir.position.set(1, 1, 1); scene.add(dir);
-  } else {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
-    dir.position.set(1, 1, 1); scene.add(dir);
-  }
-
-  applyHexColors(globe, isDark);
-}
-
 function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
   return transport.map(arc => {
     const tex = makeIconTexture(arc.emoji);
@@ -299,7 +238,7 @@ function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Spr
   });
 }
 
-export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {}, theme = "dark" }: GlobeProps) {
+export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {} }: GlobeProps) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const composerRef     = useRef<EffectComposer | null>(null);
   const frameRef        = useRef<number>(0);
@@ -308,51 +247,34 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const sceneRef        = useRef<THREE.Scene | null>(null);
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
-  const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
-  themeRef.current        = theme;
 
+  // Re-render data quand parcels ou flightPositions changent
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
-    const isDark = theme === "dark";
-    applyData(globeRef.current, parcels, isDark, flightPositions);
+    applyData(globeRef.current, parcels, flightPositions);
     if (sceneRef.current) {
-      applyTheme(globeRef.current, sceneRef.current, isDark);
       const prevState = spriteStateRef.current;
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-      const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
+      const newTransport = buildData(parcels, flightPositions).transport as any[];
       newTransport.forEach((arc: any) => {
         const saved = prevState.get(arc.id);
         if (saved) {
-          arc._curLat = saved.lat;
-          arc._curLng = saved.lng;
-          arc._curAlt = saved.alt;
-          arc._curHdg = saved.hdg;
+          arc._curLat = saved.lat; arc._curLng = saved.lng;
+          arc._curAlt = saved.alt; arc._curHdg = saved.hdg;
         }
       });
       spritesRef.current = setupSprites(sceneRef.current, newTransport);
     }
-    if (composerRef.current) {
-      const passes = (composerRef.current as any).passes as any[];
-      const effectPass = passes.find((p: any) => p instanceof EffectPass);
-      if (effectPass) {
-        const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
-        if (bloom) {
-          bloom.intensity = isDark ? 1.6 : 0.5;
-          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.15 : 0.35;
-        }
-      }
-    }
-  }, [parcels, theme, globeRef, flightPositions]);
+  }, [parcels, globeRef, flightPositions]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const init = async () => {
-      const isDark = themeRef.current === "dark";
       const [{ default: GlobeGL }, countries] = await Promise.all([
         import("globe.gl"),
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
@@ -367,32 +289,27 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
         .showGraticules(true)
-        .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
+        .atmosphereColor("#ff6600")
         .atmosphereAltitude(0.12)
         .globeMaterial(new THREE.MeshPhongMaterial({
-          color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-          emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+          color: new THREE.Color("#0d0000"),
+          emissive: new THREE.Color("#0a0000"),
           transparent: true, opacity: 0.95,
         }))
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
-        .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
+        .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0))
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
-      if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-        const dir = new THREE.DirectionalLight(0xff9944, 0.8);
-        dir.position.set(1, 1, 1); scene.add(dir);
-      } else {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
-        dir.position.set(1, 1, 1); scene.add(dir);
-      }
+      scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+      const dir = new THREE.DirectionalLight(0xff9944, 0.8);
+      dir.position.set(1, 1, 1);
+      scene.add(dir);
 
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
@@ -401,7 +318,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
             if (obj.material) obj.material = new THREE.LineBasicMaterial({
-              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+              color: new THREE.Color("#993300"),
               transparent: true, opacity: 0.25,
             });
           }
@@ -409,13 +326,12 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       }, 500);
 
       globeRef.current = globe;
-      applyData(globe, pendingRef.current, isDark, flightPosRef.current);
+      applyData(globe, pendingRef.current, flightPosRef.current);
 
-      const transport = buildData(pendingRef.current, isDark, flightPosRef.current).transport as any[];
+      const transport = buildData(pendingRef.current, flightPosRef.current).transport as any[];
       transport.forEach((arc: any) => {
         const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-        arc._curLat = midLat;
-        arc._curLng = midLng;
+        arc._curLat = midLat; arc._curLng = midLng;
         arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
         arc._curHdg = 0;
       });
@@ -427,9 +343,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
-        intensity: isDark ? 1.6 : 0.5,
-        luminanceThreshold: isDark ? 0.15 : 0.35,
-        luminanceSmoothing: 0.4, mipmapBlur: true,
+        intensity: 1.6,
+        luminanceThreshold: 0.15,
+        luminanceSmoothing: 0.4,
+        mipmapBlur: true,
       })));
       composerRef.current = composer;
 
