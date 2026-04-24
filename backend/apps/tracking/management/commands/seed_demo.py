@@ -9,19 +9,20 @@ Format des tokens :
   - "AF011:CDG:JFK"  → bypass direct (pas d'API call)
 
 Variables d'environnement :
-  AVIATIONSTACK_API_KEY   — clé API AviationStack (optionnel)
+  AVIATIONSTACK_API_KEY   — clé API AviationStack
   AVIATIONSTACK_BASE_URL  — défaut: http://api.aviationstack.com/v1
 """
 import os
 import requests
+from decouple import config as decouple_config
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.tracking.models import Parcel, TrackingEvent
 
-AVIATION_API_KEY  = os.environ.get("AVIATIONSTACK_API_KEY", "")
-AVIATION_BASE_URL = os.environ.get("AVIATIONSTACK_BASE_URL", "http://api.aviationstack.com/v1")
+AVIATION_API_KEY  = decouple_config("AVIATIONSTACK_API_KEY", default="")
+AVIATION_BASE_URL = decouple_config("AVIATIONSTACK_BASE_URL", default="http://api.aviationstack.com/v1")
 
 IATA_META: dict[str, dict] = {
     "CDG": {"country": "FR", "lat": 49.0097,  "lng":   2.5479, "name": "Paris Charles de Gaulle"},
@@ -80,6 +81,7 @@ IATA_META: dict[str, dict] = {
     "NBO": {"country": "KE", "lat":  -1.3192, "lng":  36.9275, "name": "Nairobi Jomo Kenyatta"},
     "LOS": {"country": "NG", "lat":   6.5774, "lng":   3.3212, "name": "Lagos Murtala Muhammed"},
     "ADD": {"country": "ET", "lat":   8.9779, "lng":  38.7993, "name": "Addis Ababa Bole"},
+    "ORD": {"country": "US", "lat":  41.9742, "lng": -87.9073, "name": "Chicago O'Hare"},
 }
 
 
@@ -103,32 +105,30 @@ def lookup_flight_api(flight_number: str) -> dict | None:
             return None
         f = flights[0]
         return {
-            "origin_iata":    f["departure"]["iata"],
-            "dest_iata":      f["arrival"]["iata"],
-            "airline":        f["airline"]["name"],
-            "flight_status":  f.get("flight_status", "active"),
+            "origin_iata":   f["departure"]["iata"],
+            "dest_iata":     f["arrival"]["iata"],
+            "airline":       f["airline"]["name"],
+            "flight_status": f.get("flight_status", "active"),
         }
-    except Exception as e:
+    except Exception:
         return None
 
 
 class Command(BaseCommand):
-    help = "Crée des colis démo liés à des vols (args CLI ou lookup API)"
+    help = "Crée des colis démo liés à des vols (args CLI ou lookup AviationStack)"
 
     def add_arguments(self, parser):
         parser.add_argument(
             "flights",
             nargs="*",
-            help="Tokens vol : 'AF011' ou 'AF011:CDG:JFK'. Si vide, utilise les 4 colis hardcodés.",
+            help="Tokens vol : 'AF011' ou 'AF011:CDG:JFK'. Si vide, utilise les colis hardcodés.",
         )
         parser.add_argument(
-            "--user",
-            default="",
+            "--user", default="",
             help="Username du propriétaire (défaut: premier superuser)",
         )
         parser.add_argument(
-            "--reset",
-            action="store_true",
+            "--reset", action="store_true",
             help="Supprime les colis DEMO-LIVE-* existants avant de recréer",
         )
 
@@ -137,25 +137,29 @@ class Command(BaseCommand):
         flight_number = parts[0].upper()
 
         if len(parts) == 3:
-            _, origin_iata, dest_iata = parts
             return {
                 "flight_number": flight_number,
-                "origin_iata":   origin_iata.upper(),
-                "dest_iata":     dest_iata.upper(),
+                "origin_iata":   parts[1].upper(),
+                "dest_iata":     parts[2].upper(),
                 "airline":       "",
             }
 
         self.stdout.write(f"[INFO] Lookup API pour {flight_number}…")
-        api_result = lookup_flight_api(flight_number)
-        if api_result:
+        if not AVIATION_API_KEY:
+            self.stderr.write(self.style.WARNING(
+                f"  ✗ AVIATIONSTACK_API_KEY absent du .env. Utilisez 'FLXX:ORIG:DEST' pour bypass."
+            ))
+            return None
+
+        result = lookup_flight_api(flight_number)
+        if result:
             self.stdout.write(
-                f"  ✓ {flight_number}: {api_result['origin_iata']} → {api_result['dest_iata']} ({api_result['airline']})"
+                f"  ✓ {flight_number}: {result['origin_iata']} → {result['dest_iata']} ({result['airline']})"
             )
-            return {"flight_number": flight_number, **api_result}
+            return {"flight_number": flight_number, **result}
 
         self.stderr.write(self.style.WARNING(
-            f"  ✗ Lookup échoué pour {flight_number} (API key absente ou vol inconnu). "
-            "Utilisez le format 'FLXX:ORIG:DEST' pour bypass."
+            f"  ✗ Vol {flight_number} introuvable via API. Utilisez 'FLXX:ORIG:DEST' pour bypass."
         ))
         return None
 
@@ -211,7 +215,6 @@ class Command(BaseCommand):
             f"✅ {tracking_number} — {origin_country} → {dest_country} — vol {fn} ({len(events)} events)"
         ))
 
-    # Colis hardcodés (fallback si aucun token CLI)
     HARDCODED = [
         {"flight_number": "AF6728", "origin_iata": "CDG", "dest_iata": "PEK", "airline": "Air France Cargo"},
         {"flight_number": "AF652",  "origin_iata": "CDG", "dest_iata": "RUN", "airline": "Air France Cargo"},
@@ -232,19 +235,18 @@ class Command(BaseCommand):
         else:
             owner = User.objects.filter(is_superuser=True).first() or User.objects.first()
             if not owner:
-                # Crée un superuser admin si la base est vide
                 owner = User.objects.create_superuser(
                     username="admin", email="admin@orbi7rack.local", password="admin"
                 )
                 self.stdout.write(self.style.WARNING("[INFO] Superuser admin/admin créé."))
 
-        tokens = options["flights"]
-        now = timezone.now()
-
         if options["reset"]:
             deleted, _ = Parcel.objects.filter(tracking_number__startswith="DEMO-LIVE-").delete()
             if deleted:
                 self.stdout.write(self.style.WARNING(f"Supprimé : {deleted} colis DEMO-LIVE-*"))
+
+        tokens = options["flights"]
+        now = timezone.now()
 
         if not tokens:
             self.stdout.write("[INFO] Aucun token fourni — utilisation des colis hardcodés.")

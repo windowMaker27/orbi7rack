@@ -129,9 +129,6 @@ function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
       });
     }
 
-    // Position du colis en cours de route :
-    // - live ou simulated → fp.lat/lng (source unifiée)
-    // - fallback → estimated_position
     if (fp?.lat != null && fp?.lng != null) {
       points.push({
         lat: fp.lat, lng: fp.lng,
@@ -179,9 +176,6 @@ function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
       const { origin, destination } = resolveEndpoints(p, fp);
       if (!origin || !destination) return null;
 
-      // Position initiale du sprite :
-      // - si fp disponible (live ou simulated) → utilise fp.lat/lng directement
-      // - sinon → milieu de l'arc (slerp t=0.5)
       let initLat: number, initLng: number;
       if (fp?.lat != null && fp?.lng != null) {
         initLat = fp.lat;
@@ -340,12 +334,11 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const transport = buildData(pendingRef.current, flightPosRef.current).transport as any[];
       spritesRef.current = setupSprites(scene, transport);
 
-      // Arrêt de la RAF interne de globe.gl — on gère notre propre loop avec le composer
-      globe.pauseAnimation();
-
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera = globe.camera() as THREE.Camera;
 
+      // Le composer s'applique par-dessus le rendu natif de globe.gl
+      // globe.gl garde sa propre RAF (interactions, arcs animés) — on ne la stoppe pas
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
@@ -356,9 +349,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       })));
       composerRef.current = composer;
 
+      // Notre RAF : met à jour les sprites et applique le bloom
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
-        globe.controls().update();
 
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
@@ -374,19 +367,16 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
               ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
 
             if (mode === "live") {
-              // Position GPS réelle
               targetLat = livePos.lat;
               targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              // Mode simulated : fp.lat/lng EST déjà la position calculée côté serveur
               targetLat = livePos.lat;
               targetLng = livePos.lng;
               targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
             targetHdg = livePos.heading ?? null;
           } else {
-            // Aucune position connue → milieu de l'arc
             [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
             targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
