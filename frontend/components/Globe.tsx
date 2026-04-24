@@ -12,10 +12,9 @@ interface GlobeProps {
   globeRef: React.MutableRefObject<any>;
   flightPositions?: FlightPositionMap;
   positionMode?: PositionModeMap;
-  theme?: Theme; // conservé pour le switch UI, mais le globe est toujours dark
+  theme?: Theme;
 }
 
-// Couleurs statuts — toujours dark, vives sur fond sombre
 const STATUS_COLORS: Record<string, string> = {
   pending: "#ffaa00",
   in_transit: "#00cfff",
@@ -48,7 +47,6 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-// Palette hexagones — dark uniquement
 const HEX_PALETTE = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
 function stableHexColor(featureIndex: number): string {
@@ -92,11 +90,6 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-/**
- * Résout les endpoints FIXES de l'arc.
- * Destination = toujours centroïde de dest_country.
- * flightPos.origin peut enrichir le départ si disponible.
- */
 function resolveEndpoints(
   parcel: Parcel,
   flightPos: { origin?: { lat: number; lng: number } } | undefined,
@@ -136,6 +129,9 @@ function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
       });
     }
 
+    // Position du colis en cours de route :
+    // - live ou simulated → fp.lat/lng (source unifiée)
+    // - fallback → estimated_position
     if (fp?.lat != null && fp?.lng != null) {
       points.push({
         lat: fp.lat, lng: fp.lng,
@@ -182,14 +178,28 @@ function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
       const fp = flightPositions[p.id];
       const { origin, destination } = resolveEndpoints(p, fp);
       if (!origin || !destination) return null;
+
+      // Position initiale du sprite :
+      // - si fp disponible (live ou simulated) → utilise fp.lat/lng directement
+      // - sinon → milieu de l'arc (slerp t=0.5)
+      let initLat: number, initLng: number;
+      if (fp?.lat != null && fp?.lng != null) {
+        initLat = fp.lat;
+        initLng = fp.lng;
+      } else {
+        [initLat, initLng] = slerpLatLng(origin[0], origin[1], destination[0], destination[1], 0.5);
+      }
+
       return {
         id: p.id,
         startLat: origin[0], startLng: origin[1],
         endLat: destination[0], endLng: destination[1],
         color: STATUS_COLORS[p.status] ?? "#fff",
         emoji: p.status === "out_for_delivery" ? "\ud83d\ude9a" : "\u2708\ufe0f",
-        _curLat: null as number | null, _curLng: null as number | null,
-        _curAlt: null as number | null, _curHdg: null as number | null,
+        _curLat: initLat as number | null,
+        _curLng: initLng as number | null,
+        _curAlt: null as number | null,
+        _curHdg: null as number | null,
       };
     }).filter(Boolean);
 
@@ -252,7 +262,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
 
-  // Re-render data quand parcels ou flightPositions changent
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
@@ -329,13 +338,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       applyData(globe, pendingRef.current, flightPosRef.current);
 
       const transport = buildData(pendingRef.current, flightPosRef.current).transport as any[];
-      transport.forEach((arc: any) => {
-        const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-        arc._curLat = midLat; arc._curLng = midLng;
-        arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
-        arc._curHdg = 0;
-      });
       spritesRef.current = setupSprites(scene, transport);
+
+      // Arrêt de la RAF interne de globe.gl — on gère notre propre loop avec le composer
+      globe.pauseAnimation();
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera = globe.camera() as THREE.Camera;
@@ -366,15 +372,21 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             const rawProgress = livePos.progress;
             const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
               ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
+
             if (mode === "live") {
-              targetLat = livePos.lat; targetLng = livePos.lng;
+              // Position GPS réelle
+              targetLat = livePos.lat;
+              targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, progress);
+              // Mode simulated : fp.lat/lng EST déjà la position calculée côté serveur
+              targetLat = livePos.lat;
+              targetLng = livePos.lng;
               targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
             targetHdg = livePos.heading ?? null;
           } else {
+            // Aucune position connue → milieu de l'arc
             [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
             targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
