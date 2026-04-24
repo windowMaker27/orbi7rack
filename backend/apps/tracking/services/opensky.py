@@ -10,24 +10,97 @@ OPENSKY_BASE = "https://opensky-network.org/api"
 MIN_CRUISE_ALT = 1000   # metres — couvre montee/descente
 CACHE_TTL = 60          # secondes — evite de bruler le quota anonyme (400 req/jour)
 
-# Mapping IATA prefix → ICAO callsign prefix (copie depuis flightradar.py)
+# Mapping IATA prefix → ICAO callsign prefix (complet)
 IATA_TO_ICAO_PREFIX = {
-    "SQ": "SIA",  "AF": "AFR",  "BA": "BAW",  "LH": "DLH",  "KL": "KLM",
-    "EK": "UAE",  "QR": "QTR",  "CX": "CPA",  "JL": "JAL",  "NH": "ANA",
-    "TK": "THY",  "LX": "SWR",  "OS": "AUA",  "SK": "SAS",  "AY": "FIN",
-    "IB": "IBE",  "AZ": "ITY",  "UA": "UAL",  "AA": "AAL",  "DL": "DAL",
-    "WN": "SWA",  "AC": "ACA",  "QF": "QFA",  "EY": "ETD",  "MS": "MSR",
-    "ET": "ETH",  "RJ": "RJA",  "CI": "CAL",  "BR": "EVA",  "OZ": "AAR",
-    "KE": "KAL",  "FX": "FDX",  "5X": "UPS",  "DE": "CFG",  "KZ": "KZR",
+    "SQ": "SIA",  # Singapore Airlines
+    "AF": "AFR",  # Air France
+    "BA": "BAW",  # British Airways
+    "LH": "DLH",  # Lufthansa
+    "KL": "KLM",  # KLM
+    "EK": "UAE",  # Emirates
+    "QR": "QTR",  # Qatar Airways
+    "CX": "CPA",  # Cathay Pacific
+    "JL": "JAL",  # Japan Airlines
+    "NH": "ANA",  # ANA
+    "TK": "THY",  # Turkish Airlines
+    "LX": "SWR",  # Swiss
+    "OS": "AUA",  # Austrian
+    "SK": "SAS",  # Scandinavian
+    "AY": "FIN",  # Finnair
+    "IB": "IBE",  # Iberia
+    "AZ": "ITY",  # ITA Airways
+    "UA": "UAL",  # United
+    "AA": "AAL",  # American
+    "DL": "DAL",  # Delta
+    "WN": "SWA",  # Southwest
+    "AC": "ACA",  # Air Canada
+    "QF": "QFA",  # Qantas
+    "EY": "ETD",  # Etihad
+    "MS": "MSR",  # EgyptAir
+    "ET": "ETH",  # Ethiopian
+    "RJ": "RJA",  # Royal Jordanian
+    "CI": "CAL",  # China Airlines
+    "BR": "EVA",  # EVA Air
+    "OZ": "AAR",  # Asiana
+    "KE": "KAL",  # Korean Air
+    "FX": "FDX",  # FedEx
+    "5X": "UPS",  # UPS Airlines
+    "DE": "CFG",  # Condor
+    "KZ": "KZR",  # Air Astana
+    "AI": "AIC",  # Air India
+    "6E": "IGO",  # IndiGo
+    "G8": "GOW",  # Go First
+    "UK": "VTI",  # Vistara
+    "EI": "EIN",  # Aer Lingus
+    "VY": "VLG",  # Vueling
+    "U2": "EZY",  # easyJet
+    "FR": "RYR",  # Ryanair
+    "W6": "WZZ",  # Wizz Air
+    "TP": "TAP",  # TAP Air Portugal
+    "SN": "BEL",  # Brussels Airlines
+    "LO": "LOT",  # LOT Polish
+    "OK": "CSA",  # Czech Airlines
+    "MH": "MAS",  # Malaysia Airlines
+    "GA": "GIA",  # Garuda Indonesia
+    "PR": "PAL",  # Philippine Airlines
+    "VN": "HVN",  # Vietnam Airlines
+    "TG": "THA",  # Thai Airways
+    "SV": "SVA",  # Saudia
+    "GF": "GFA",  # Gulf Air
+    "WY": "OMA",  # Oman Air
+    "PK": "PIA",  # Pakistan International
+    "UL": "ALK",  # SriLankan Airlines
+    "CM": "CMP",  # Copa Airlines
+    "AV": "AVA",  # Avianca
+    "LA": "LAN",  # LATAM
+    "JJ": "TAM",  # LATAM Brasil
+    "G3": "GLO",  # Gol
+    "AD": "AZU",  # Azul
+    "AR": "ARG",  # Aerolineas Argentinas
+    "AM": "AMX",  # Aeromexico
+    "SA": "SAA",  # South African Airways
+    "ET": "ETH",  # Ethiopian Airlines
+    "KQ": "KQA",  # Kenya Airways
+    "RO": "ROT",  # TAROM
+    "PS": "AUI",  # Ukraine International
+    "SU": "AFL",  # Aeroflot
+    "S7": "SBI",  # S7 Airlines
+    "UT": "UTA",  # UTair
+    "HY": "UZB",  # Uzbekistan Airways
+    "KC": "KZR",  # Air Astana (IATA alt)
+    "B2": "BRU",  # Belavia
 }
 
 
 def _iata_to_icao_callsign(flight_number: str) -> Optional[str]:
     fn = flight_number.upper().replace(" ", "")
-    prefix = fn[:2]
-    number = fn[2:]
-    icao = IATA_TO_ICAO_PREFIX.get(prefix)
-    return f"{icao}{number}" if icao else None
+    # Essaie préfixe 2 chars puis 1 char
+    for n in (2, 1):
+        prefix = fn[:n]
+        icao = IATA_TO_ICAO_PREFIX.get(prefix)
+        if icao:
+            return f"{icao}{fn[n:]}"
+    return None
 
 
 def _auth() -> Optional[httpx.BasicAuth]:
@@ -65,12 +138,12 @@ def _query_opensky(callsign: str, auth: Optional[httpx.BasicAuth]) -> Optional[d
         )
 
         for s in states:
-            raw      = (s[1] or "").strip().upper()
-            lat      = s[6]
-            lng      = s[5]
-            geo_alt  = s[13]
-            baro_alt = s[7]
-            alt      = geo_alt if geo_alt is not None else baro_alt
+            raw       = (s[1] or "").strip().upper()
+            lat       = s[6]
+            lng       = s[5]
+            geo_alt   = s[13]
+            baro_alt  = s[7]
+            alt       = geo_alt if geo_alt is not None else baro_alt
             on_ground = s[8]
 
             if target not in raw:
@@ -102,8 +175,8 @@ def _query_opensky(callsign: str, auth: Optional[httpx.BasicAuth]) -> Optional[d
 def get_flight_live_position(flight_number: str) -> Optional[dict]:
     """
     Cherche la position live sur OpenSky en tentant :
-      1. Le callsign IATA tel quel  (ex: AF011)
-      2. Le callsign ICAO converti  (ex: AFR011)
+      1. Le callsign IATA tel quel  (ex: DL267)
+      2. Le callsign ICAO converti  (ex: DAL267)
     Met en cache 60s pour préserver le quota anonyme.
     """
     iata = flight_number.upper().strip()

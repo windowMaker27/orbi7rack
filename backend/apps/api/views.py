@@ -68,6 +68,8 @@ COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "CL": (-35.6751, -71.5430),
     "AR": (-38.4161, -63.6167),
     "CO": (4.5709, -74.2973),
+    "RE": (-21.1151, 55.5364),
+    "QA": (25.3548, 51.1839),
 }
 
 
@@ -92,6 +94,38 @@ def _compute_progress(origin: tuple, destination: tuple, current: tuple) -> floa
         return 0.5
     done = _haversine(*origin, *current)
     return round(min(done / total, 0.95), 4)
+
+
+def _compute_simulated_progress(parcel) -> float:
+    """
+    Calcule la progression simulée depuis les timestamps des events géocodés.
+
+    Logique :
+      - departure_event  = premier event (timestamp le plus ancien)
+      - arrival_event    = dernier event  (timestamp le plus récent)
+      - progress = (now - departure) / (arrival - departure), clampé [0.05, 0.95]
+
+    Si un seul event ou timestamps identiques → 0.5 par défaut.
+    Si now < departure → 0.05 (pas encore décollé).
+    Si now > arrival   → 0.95 (atterri, on ne montre pas 100% tant qu'on n'a pas de confirmation).
+    """
+    geo_events = parcel.events.filter(
+        latitude__isnull=False, longitude__isnull=False
+    ).order_by("timestamp")
+
+    count = geo_events.count()
+    if count < 2:
+        return 0.5
+
+    departure_ts = geo_events.first().timestamp
+    arrival_ts   = geo_events.last().timestamp
+    total_sec    = (arrival_ts - departure_ts).total_seconds()
+
+    if total_sec <= 0:
+        return 0.5
+
+    elapsed = (timezone.now() - departure_ts).total_seconds()
+    return round(min(max(elapsed / total_sec, 0.05), 0.95), 4)
 
 
 class ParcelViewSet(
@@ -148,7 +182,7 @@ class ParcelViewSet(
     def flight_position(self, request, pk=None):
         parcel = self.get_object()
 
-        # --- Coordonnees d'arc : centroid pays ---
+        # --- Coordonnées d'arc : centroid pays ---
         origin_coords = _country_centroid(parcel.origin_country)
         dest_coords   = _country_centroid(parcel.dest_country)
 
@@ -208,17 +242,7 @@ class ParcelViewSet(
                 status=404,
             )
 
-        geo_events = parcel.events.filter(
-            latitude__isnull=False, longitude__isnull=False
-        ).order_by("timestamp")
-
-        if geo_events.count() >= 2:
-            total_sec = (geo_events.last().timestamp - geo_events.first().timestamp).total_seconds()
-            elapsed   = (timezone.now() - geo_events.first().timestamp).total_seconds()
-            progress  = min(elapsed / total_sec, 0.95) if total_sec > 0 else 0.5
-        else:
-            progress = 0.5
-
+        progress = _compute_simulated_progress(parcel)
         position = get_simulated_position(origin_coords, dest_coords, progress)
         position["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
         position["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}
