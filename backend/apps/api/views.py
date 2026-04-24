@@ -94,6 +94,38 @@ def _compute_progress(origin: tuple, destination: tuple, current: tuple) -> floa
     return round(min(done / total, 0.95), 4)
 
 
+def _resolve_endpoints(parcel) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    """
+    Résout (origin_coords, dest_coords) pour un colis.
+    Priorité : coordonnées des TrackingEvents géocodés (premier=départ, dernier=arrivée)
+    Fallback : centroïde pays.
+    """
+    geo_events = list(
+        parcel.events.filter(latitude__isnull=False, longitude__isnull=False)
+        .order_by("timestamp")
+    )
+
+    if len(geo_events) >= 2:
+        first, last = geo_events[0], geo_events[-1]
+        origin = (first.latitude, first.longitude)
+        destination = (last.latitude, last.longitude)
+        return origin, destination
+
+    # Fallback partiel : un seul event géocodé
+    origin_coords = _country_centroid(parcel.origin_country)
+    dest_coords = _country_centroid(parcel.dest_country)
+
+    if len(geo_events) == 1:
+        e = geo_events[0]
+        # Si on a l'un ou l'autre manquant, le géocodé prend la place du premier disponible
+        if not origin_coords:
+            origin_coords = (e.latitude, e.longitude)
+        elif not dest_coords:
+            dest_coords = (e.latitude, e.longitude)
+
+    return origin_coords, dest_coords
+
+
 class ParcelViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
@@ -148,19 +180,8 @@ class ParcelViewSet(
     def flight_position(self, request, pk=None):
         parcel = self.get_object()
 
-        # --- Coordonnees d'arc : centroid pays ---
-        origin_coords = _country_centroid(parcel.origin_country)
-        dest_coords   = _country_centroid(parcel.dest_country)
-
-        # Fallback sur geo_events si pays absent de la table
-        if not origin_coords or not dest_coords:
-            geo_events = parcel.events.filter(
-                latitude__isnull=False, longitude__isnull=False
-            ).order_by("timestamp")
-            if geo_events.count() >= 2:
-                first, last = geo_events.first(), geo_events.last()
-                origin_coords = origin_coords or (first.latitude, first.longitude)
-                dest_coords   = dest_coords   or (last.latitude,  last.longitude)
+        # Résolution précise origine/destination via TrackingEvents
+        origin_coords, dest_coords = _resolve_endpoints(parcel)
 
         # --- Live (OpenSky / FR24) ---
         if parcel.flight_number:
@@ -172,7 +193,6 @@ class ParcelViewSet(
                     position["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
                     position["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}
 
-                # Persiste la position live en DB
                 parcel.last_live_lat = position["lat"]
                 parcel.last_live_lng = position["lng"]
                 parcel.last_live_at  = timezone.now()
@@ -180,7 +200,7 @@ class ParcelViewSet(
 
                 return Response(position)
 
-            # Pas de live : fallback sur la dernière position persistée (stale)
+            # Fallback stale DB
             if parcel.last_live_lat is not None and parcel.last_live_lng is not None:
                 stale: dict = {
                     "lat":      parcel.last_live_lat,
@@ -204,7 +224,7 @@ class ParcelViewSet(
         # --- Fallback : simulation temporelle ---
         if not origin_coords or not dest_coords:
             return Response(
-                {"error": "Pays origine/destination inconnus et pas assez d'evenements geocodes"},
+                {"error": "Origine/destination inconnues et pas assez d'événements géocodés"},
                 status=404,
             )
 

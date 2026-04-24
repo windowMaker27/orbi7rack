@@ -94,14 +94,31 @@ function resolveEndpoints(
   parcel: Parcel,
   flightPos: { origin?: { lat: number; lng: number } } | undefined,
 ): { origin: [number, number] | null; destination: [number, number] | null } {
-  let origin: [number, number] | null = null;
+  // Priorité 1 : coords depuis flight_position API (précision aéroport)
   if (flightPos?.origin?.lat != null && flightPos?.origin?.lng != null) {
-    origin = [flightPos.origin.lat, flightPos.origin.lng];
-  } else {
-    origin = getCentroid(parcel.origin_country);
+    const destFromFlight = (flightPos as any).destination;
+    const origin: [number, number] = [flightPos.origin.lat, flightPos.origin.lng];
+    const destination: [number, number] | null = destFromFlight?.lat != null
+      ? [destFromFlight.lat, destFromFlight.lng]
+      : getCentroid(parcel.dest_country);
+    return { origin, destination };
   }
-  const destination: [number, number] | null = getCentroid(parcel.dest_country);
-  return { origin, destination };
+
+  // Priorité 2 : coords depuis les TrackingEvents (exposées par le serializer)
+  const oc = (parcel as any).origin_coords;
+  const dc = (parcel as any).dest_coords;
+  if (oc?.lat != null && dc?.lat != null) {
+    return {
+      origin: [oc.lat, oc.lng],
+      destination: [dc.lat, dc.lng],
+    };
+  }
+
+  // Fallback : centroïde pays
+  return {
+    origin: getCentroid(parcel.origin_country),
+    destination: getCentroid(parcel.dest_country),
+  };
 }
 
 function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
@@ -252,6 +269,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
+  // Flag : suspend composer.render() pendant les animations POV de globe.gl
+  const povAnimatingRef = useRef<boolean>(false);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -329,6 +348,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       }, 500);
 
       globeRef.current = globe;
+
+      // Expose setPOVAnimating pour page.tsx
+      globe.setPOVAnimating = (val: boolean) => { povAnimatingRef.current = val; };
+
       applyData(globe, pendingRef.current, flightPosRef.current);
 
       const transport = buildData(pendingRef.current, flightPosRef.current).transport as any[];
@@ -337,8 +360,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera = globe.camera() as THREE.Camera;
 
-      // Le composer s'applique par-dessus le rendu natif de globe.gl
-      // globe.gl garde sa propre RAF (interactions, arcs animés) — on ne la stoppe pas
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
@@ -349,7 +370,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       })));
       composerRef.current = composer;
 
-      // Notre RAF : met à jour les sprites et applique le bloom
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
 
@@ -403,7 +423,10 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
 
-        composer.render();
+        // Suspend le rendu composer pendant les animations POV pour éviter le double-rendu
+        if (!povAnimatingRef.current) {
+          composer.render();
+        }
       };
 
       animate();

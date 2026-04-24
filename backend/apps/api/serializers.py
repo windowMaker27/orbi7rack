@@ -11,7 +11,7 @@ ISO2_CENTROIDS = {
     "BY": (53.70, 27.95), "CA": (56.13, -106.34), "CH": (46.81, 8.22),
     "CL": (-35.67, -71.54), "CN": (35.86, 104.19), "CO": (4.57, -74.29),
     "CZ": (49.81, 15.47), "DE": (51.16, 10.45), "DK": (56.26, 9.50),
-    "DZ": (28.03, 1.65), "EG": (26.82, 30.80), "ES": (40.46, -3.74),
+    "EG": (26.82, 30.80), "ES": (40.46, -3.74),
     "FI": (61.92, 25.74), "FR": (46.22, 2.21), "GB": (55.37, -3.43),
     "GR": (39.07, 21.82), "HK": (22.39, 114.10), "HR": (45.10, 15.20),
     "HU": (47.16, 19.50), "ID": (-0.78, 113.92), "IN": (20.59, 78.96),
@@ -51,6 +51,8 @@ class TrackingEventSerializer(serializers.ModelSerializer):
 class ParcelSerializer(serializers.ModelSerializer):
     events = TrackingEventSerializer(many=True, read_only=True)
     estimated_position = serializers.SerializerMethodField()
+    origin_coords = serializers.SerializerMethodField()
+    dest_coords = serializers.SerializerMethodField()
 
     class Meta:
         model = Parcel
@@ -67,6 +69,8 @@ class ParcelSerializer(serializers.ModelSerializer):
             "updated_at",
             "events",
             "estimated_position",
+            "origin_coords",
+            "dest_coords",
         ]
         read_only_fields = [
             "status",
@@ -77,6 +81,43 @@ class ParcelSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def _geo_events(self, obj):
+        """Events géocodés triés par timestamp ASC (du plus ancien au plus récent)."""
+        return [
+            e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
+            if e.latitude is not None and e.longitude is not None
+        ]
+
+    def get_origin_coords(self, obj):
+        """
+        Coordonnées précises de l'origine :
+        1. Premier TrackingEvent géocodé (aéroport de départ)
+        2. Fallback → centroïde origin_country
+        """
+        geo = self._geo_events(obj)
+        if geo:
+            e = geo[0]
+            return {"lat": e.latitude, "lng": e.longitude, "source": "event"}
+        pos = get_centroid(obj.origin_country)
+        if pos:
+            return {"lat": pos[0], "lng": pos[1], "source": "centroid"}
+        return None
+
+    def get_dest_coords(self, obj):
+        """
+        Coordonnées précises de la destination :
+        1. Dernier TrackingEvent géocodé (aéroport d'arrivée)
+        2. Fallback → centroïde dest_country
+        """
+        geo = self._geo_events(obj)
+        if geo:
+            e = geo[-1]
+            return {"lat": e.latitude, "lng": e.longitude, "source": "event"}
+        pos = get_centroid(obj.dest_country)
+        if pos:
+            return {"lat": pos[0], "lng": pos[1], "source": "centroid"}
+        return None
+
     def get_estimated_position(self, obj):
         """
         Retourne {lat, lng, source} selon la priorité :
@@ -84,13 +125,11 @@ class ParcelSerializer(serializers.ModelSerializer):
         2. Dernier event avec coordonnées (in_transit)
         3. Fallback → centroïde origin_country
         """
-        # Priorité 1 : delivered → dest_country
         if obj.status == Parcel.Status.DELIVERED:
             pos = get_centroid(obj.dest_country)
             if pos:
                 return {"lat": pos[0], "lng": pos[1], "source": "dest_country"}
 
-        # Priorité 2 : dernier event géocodé
         geo_event = next(
             (e for e in obj.events.all() if e.latitude is not None and e.longitude is not None),
             None
@@ -98,7 +137,6 @@ class ParcelSerializer(serializers.ModelSerializer):
         if geo_event:
             return {"lat": geo_event.latitude, "lng": geo_event.longitude, "source": "last_event"}
 
-        # Priorité 3 : fallback origin_country
         pos = get_centroid(obj.origin_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "origin_country"}

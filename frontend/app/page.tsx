@@ -15,6 +15,8 @@ import type { PositionMode } from "@/hooks/useFlightPositions";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
+const POV_DURATION = 800;
+
 function GlobeWithData() {
   const { theme } = useTheme();
   const { parcels, loading, setParcels, deleteParcel } = useParcels();
@@ -33,8 +35,13 @@ function GlobeWithData() {
       : parcel.estimated_position;
 
     if (pos && globeRef.current) {
-      globeRef.current.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 1.5 }, 800);
+      // Suspend le bloom pendant l'animation POV pour éviter le tremblement
+      globeRef.current.setPOVAnimating?.(true);
+      globeRef.current.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 1.5 }, POV_DURATION);
       globeRef.current.controls().autoRotate = false;
+      setTimeout(() => {
+        globeRef.current?.setPOVAnimating?.(false);
+      }, POV_DURATION + 50);
     }
     setSelectedParcel(parcel);
   };
