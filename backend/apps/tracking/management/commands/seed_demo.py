@@ -13,7 +13,6 @@ Variables d'environnement :
   AVIATIONSTACK_API_KEY   — clé API AviationStack
   AVIATIONSTACK_BASE_URL  — défaut: http://api.aviationstack.com/v1
 """
-import os
 import requests
 from decouple import config as decouple_config
 from django.core.management.base import BaseCommand
@@ -215,11 +214,12 @@ class Command(BaseCommand):
             f"✅ {tracking_number} — {origin_country} → {dest_country} — vol {fn} ({len(events)} events)"
         ))
 
+    # Vols réguliers longue distance — haute probabilité d'être en l'air
     HARDCODED = [
-        {"flight_number": "AF6728", "origin_iata": "CDG", "dest_iata": "PEK", "airline": "Air France Cargo"},
-        {"flight_number": "AF652",  "origin_iata": "CDG", "dest_iata": "RUN", "airline": "Air France Cargo"},
-        {"flight_number": "KZ101",  "origin_iata": "LAX", "dest_iata": "NRT", "airline": "Air Astana Cargo"},
-        {"flight_number": "DE2291", "origin_iata": "CPT", "dest_iata": "FRA", "airline": "Condor Cargo"},
+        {"flight_number": "AF011",  "origin_iata": "CDG", "dest_iata": "JFK", "airline": "Air France"},
+        {"flight_number": "EK075",  "origin_iata": "DXB", "dest_iata": "LAX", "airline": "Emirates"},
+        {"flight_number": "QR007",  "origin_iata": "DOH", "dest_iata": "JFK", "airline": "Qatar Airways"},
+        {"flight_number": "SQ321",  "origin_iata": "SIN", "dest_iata": "LHR", "airline": "Singapore Airlines"},
     ]
 
     def handle(self, *args, **options):
