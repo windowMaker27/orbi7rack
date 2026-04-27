@@ -71,62 +71,73 @@ const TOPO_SOURCES = [
   "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
 ];
 
-// ─── Conversion TopoJSON → GeoJSON inline ────────────────────────────────────
+// ─── TopoJSON → GeoJSON inline ────────────────────────────────────────────
 function topoFeature(topology: any, object: any): any {
-  function decode(arcs: number[][], topology: any): number[][][] {
-    return arcs.map(arcIndices => {
-      let coords: number[][] = [];
-      for (const idx of arcIndices) {
-        const arc = idx < 0 ? [...topology.arcs[~idx]].reverse() : [...topology.arcs[idx]];
-        let x = 0, y = 0;
-        const decoded = arc.map((delta: number[]) => {
-          x += delta[0]; y += delta[1];
-          return [x, y];
-        });
-        coords = coords.concat(coords.length ? decoded.slice(1) : decoded);
-      }
-      if (
-        coords.length > 0 &&
-        (coords[0][0] !== coords[coords.length - 1][0] ||
-          coords[0][1] !== coords[coords.length - 1][1])
-      ) {
-        coords.push([coords[0][0], coords[0][1]]);
-      }
-      return coords;
+  const { scale: [sx, sy], translate: [tx, ty] } = topology.transform;
+
+  // Décode un arc TopoJSON en coordonnées projetées [lng, lat] avec clamp
+  function decodeArc(idx: number): number[][] {
+    const raw = topology.arcs[idx < 0 ? ~idx : idx];
+    let x = 0, y = 0;
+    const pts = raw.map((d: number[]) => {
+      x += d[0]; y += d[1];
+      return [
+        Math.max(-180, Math.min(180, x * sx + tx)),
+        Math.max(-90,  Math.min(90,  y * sy + ty)),
+      ];
     });
+    return idx < 0 ? pts.reverse() : pts;
   }
 
-  function project(coords: number[][], transform: any): number[][] {
-    if (!transform) return coords;
-    const { scale: [sx, sy], translate: [tx, ty] } = transform;
-    // Clamp pour éviter tout overflow h3 polygonToCells
-    return coords.map(([x, y]) => [
-      Math.max(-180, Math.min(180, x * sx + tx)),
-      Math.max(-90,  Math.min(90,  y * sy + ty)),
-    ]);
+  function buildRing(arcIndices: number[]): number[][] {
+    let coords: number[][] = [];
+    for (const idx of arcIndices) {
+      const pts = decodeArc(idx);
+      coords = coords.concat(coords.length ? pts.slice(1) : pts);
+    }
+    // Ferme le ring
+    if (coords.length > 0) {
+      const first = coords[0], last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
+    }
+    return coords;
+  }
+
+  // Un ring valide pour h3 doit avoir ≥ 4 points et toutes les coords dans les bornes
+  function isValidRing(ring: number[][]): boolean {
+    if (ring.length < 4) return false;
+    return ring.every(([lng, lat]) =>
+      isFinite(lng) && isFinite(lat) &&
+      lng >= -180 && lng <= 180 &&
+      lat >= -90  && lat <= 90
+    );
+  }
+
+  function sanitizePolygon(rings: number[][][]): number[][][] {
+    return rings.filter(isValidRing);
   }
 
   const features = object.geometries.map((geom: any) => {
-    let geometry: any;
-    if (geom.type === "Polygon") {
-      const rings = decode(geom.arcs, topology);
-      geometry = {
-        type: "Polygon",
-        coordinates: rings.map(r => project(r, topology.transform)),
-      };
-    } else if (geom.type === "MultiPolygon") {
-      const polys = geom.arcs.map((poly: number[][][]) => decode(poly, topology));
-      geometry = {
-        type: "MultiPolygon",
-        coordinates: polys.map((poly: number[][][]) =>
-          poly.map((ring: number[][]) => project(ring, topology.transform))
-        ),
-      };
-    } else {
-      geometry = { type: geom.type, coordinates: [] };
+    try {
+      let geometry: any;
+      if (geom.type === "Polygon") {
+        const rings = sanitizePolygon(geom.arcs.map(buildRing));
+        if (rings.length === 0) return null;
+        geometry = { type: "Polygon", coordinates: rings };
+      } else if (geom.type === "MultiPolygon") {
+        const polys = geom.arcs
+          .map((poly: number[][][]) => sanitizePolygon(poly.map(buildRing)))
+          .filter((p: number[][][]) => p.length > 0);
+        if (polys.length === 0) return null;
+        geometry = { type: "MultiPolygon", coordinates: polys };
+      } else {
+        return null;
+      }
+      return { type: "Feature", id: geom.id, properties: geom.properties ?? {}, geometry };
+    } catch {
+      return null;
     }
-    return { type: "Feature", id: geom.id, properties: geom.properties ?? {}, geometry };
-  });
+  }).filter(Boolean);
 
   return { type: "FeatureCollection", features };
 }
