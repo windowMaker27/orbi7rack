@@ -85,6 +85,14 @@ function topoFeature(topology: any, object: any): any {
         });
         coords = coords.concat(coords.length ? decoded.slice(1) : decoded);
       }
+      // Ferme le ring : GeoJSON exige que le premier et le dernier point soient identiques
+      if (
+        coords.length > 0 &&
+        (coords[0][0] !== coords[coords.length - 1][0] ||
+          coords[0][1] !== coords[coords.length - 1][1])
+      ) {
+        coords.push([coords[0][0], coords[0][1]]);
+      }
       return coords;
     });
   }
