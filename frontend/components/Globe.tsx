@@ -336,7 +336,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const b = isDark ? BLOOM.dark : BLOOM.light;
 
       const globe = (GlobeGL as any)(
-        { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
+        // animateIn: false — évite que globe.gl écrase le globeMaterial/opacity
+        // pendant son animation d'entrée (cause du "flash parfait puis perte")
+        { animateIn: false, rendererConfig: { antialias: true, alpha: true } }
       )(containerRef.current)
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
@@ -359,8 +361,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
-      // ① Purger TOUTES les lumières injectées par globe.gl avant d'appliquer les nôtres
+      // Purge immédiate + re-purge à 200ms (globe.gl peut injecter ses lumières en différé)
       applyLighting(scene, isDark);
+      setTimeout(() => applyLighting(scene, isDark), 200);
 
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
@@ -401,7 +404,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       })));
       composerRef.current = composer;
 
-      // ② Pre-warm : génère les mipmaps du bloom avant le premier frame visible
       for (let i = 0; i < 5; i++) composer.render();
 
       const animate = () => {
