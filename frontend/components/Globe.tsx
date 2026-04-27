@@ -66,39 +66,28 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-// GeoJSON natifs — pas de conversion TopoJSON nécessaire
+// Sources GeoJSON fiables avec fallback
 const GEOJSON_SOURCES = [
-  "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson",
-  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json",
+  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json",
+  "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
 ];
 
 async function fetchCountries(): Promise<any> {
-  // Source 1 : GeoJSON natif (datasets/geo-countries)
-  try {
-    const res = await fetch(GEOJSON_SOURCES[0]);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.features?.length > 0) return data;
+  // world-atlas fournit un TopoJSON — on le convertit en GeoJSON via topojson-client
+  const { default: topojson } = await import("topojson-client" as any);
+  for (const url of GEOJSON_SOURCES) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const topo = await res.json();
+      // countries-110m contient l'objet "countries"
+      const geojson = topojson.feature(topo, topo.objects.countries) as any;
+      return geojson;
+    } catch {
+      continue;
     }
-  } catch { /* fallback */ }
-
-  // Source 2 : countries-50m via esm.sh (topojson-client en CDN, pas en npm)
-  try {
-    const [topoRes, { feature }] = await Promise.all([
-      fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json"),
-      import("https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" as any),
-    ]);
-    if (topoRes.ok) {
-      const topo = await topoRes.json();
-      return feature(topo, topo.objects.countries);
-    }
-  } catch { /* fallback */ }
-
-  // Source 3 : GeoJSON simplifié depuis unpkg
-  const res = await fetch("https://unpkg.com/geojson-world-map@1.0.0/index.json");
-  if (res.ok) return res.json();
-
-  throw new Error("Impossible de charger les données pays");
+  }
+  throw new Error("Impossible de charger les donn\u00e9es pays");
 }
 
 function latitudeBiomeColor(lat: number): string {
@@ -444,7 +433,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
-          const mode = positionModeRef.current[arc.id] ?? "arc";
+          const mode = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
           let targetLat: number, targetLng: number, targetAlt: number;
           let targetHdg: number | null = null;
           if (livePos?.lat != null && livePos?.lng != null) {
