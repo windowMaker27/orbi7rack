@@ -51,38 +51,35 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
+// Valeurs bloom/lighting — source unique de vérité
+const BLOOM = {
+  dark:  { intensity: 1.6, threshold: 0.3,  smoothing: 0.4 },
+  light: { intensity: 0.5, threshold: 0.5,  smoothing: 0.4 },
+};
+const AMBIENT = {
+  dark:  { intensity: 1.0 },
+  light: { intensity: 0.8 },
+};
+const DIRLIGHT = {
+  dark:  { color: 0xff9944, intensity: 0.8 },
+  light: { color: 0xd4eeff, intensity: 1.1 },
+};
+
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-/**
- * Couleur satellite light basée sur la latitude absolue du centroïde du feature.
- * Simule une répartition biome naturelle sans base de données externe :
- *  0–15°  → forêt tropicale dense (vert profond)
- * 15–22°  → savane verte
- * 22–30°  → savane aride / brousse (ocre chaud)
- * 30–37°  → semi-aride / méditerranéen (beige-marron)
- * 37–45°  → tempéré / prairie (vert moyen)
- * 45–55°  → bocage tempéré (vert soutenu)
- * 55–65°  → boréal / taïga (vert sombre)
- * 65–75°  → toundra (vert-gris pâle)
- * 75–90°  → polaire / glace (beige très clair)
- */
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
-  if (a < 15)  return "#4a7c3f"; // forêt tropicale
-  if (a < 22)  return "#7ab648"; // savane verte
-  if (a < 30)  return "#c8a84b"; // savane aride / brousse
-  if (a < 37)  return "#b89060"; // semi-aride / méditerranéen
-  if (a < 45)  return "#8ab55a"; // tempéré / prairie
-  if (a < 55)  return "#6a9e48"; // bocage tempéré
-  if (a < 65)  return "#4d7a38"; // boréal / taïga
-  if (a < 75)  return "#7a9e6a"; // toundra
-  return "#c8d4b8";              // polaire / glace
+  if (a < 15)  return "#4a7c3f";
+  if (a < 22)  return "#7ab648";
+  if (a < 30)  return "#c8a84b";
+  if (a < 37)  return "#b89060";
+  if (a < 45)  return "#8ab55a";
+  if (a < 55)  return "#6a9e48";
+  if (a < 65)  return "#4d7a38";
+  if (a < 75)  return "#7a9e6a";
+  return "#c8d4b8";
 }
 
-/**
- * Calcule la latitude moyenne du centroïde d'un feature GeoJSON.
- * Utilise le plus grand anneau du polygone (ou MultiPolygon).
- */
 function featureCentroidLat(feature: any): number {
   try {
     const geo = feature.geometry;
@@ -104,10 +101,7 @@ function featureCentroidLat(feature: any): number {
 }
 
 function stableHexColor(feature: any, isDark: boolean): string {
-  if (isDark) {
-    return HEX_PALETTE_DARK[(feature.__hexIdx ?? 0) % HEX_PALETTE_DARK.length];
-  }
-  // Mode light : couleur basée sur la latitude du centroïde (pré-calculée à l'init)
+  if (isDark) return HEX_PALETTE_DARK[(feature.__hexIdx ?? 0) % HEX_PALETTE_DARK.length];
   const lat = feature.__centroidLat ?? featureCentroidLat(feature);
   return latitudeBiomeColor(lat);
 }
@@ -149,11 +143,7 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-function resolveCurrentPosition(
-  p: Parcel,
-  flightPos: FlightPositionMap,
-  isDark: boolean,
-): { lat: number; lng: number } | null {
+function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
   const fp = flightPos[p.id];
   if (fp) {
     if (fp.source === "live" && !fp.stale) return { lat: fp.lat, lng: fp.lng };
@@ -169,13 +159,11 @@ function resolveCurrentPosition(
 
 function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
-
   const points = parcels.map(p => {
-    const pos = resolveCurrentPosition(p, flightPositions, isDark);
+    const pos = resolveCurrentPosition(p, flightPositions);
     if (!pos) return null;
     return { lat: pos.lat, lng: pos.lng, label: p.tracking_number, status: p.status, description: p.description, color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"), altitude: 0.02, radius: 0.4 };
   }).filter(Boolean);
-
   const arcs = parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
@@ -184,15 +172,13 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       if (!origin || !dest) return null;
       return { startLat: origin[0], startLng: origin[1], endLat: dest.lat, endLng: dest.lng, color: SC[p.status] ?? "#ffffff", label: p.tracking_number };
     }).filter(Boolean);
-
   const rings = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const pos = resolveCurrentPosition(p, flightPositions, isDark);
+      const pos = resolveCurrentPosition(p, flightPositions);
       if (!pos) return null;
       return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
     }).filter(Boolean);
-
   const transport = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -209,13 +195,11 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         _curAlt: null as number | null, _curHdg: null as number | null,
       };
     }).filter(Boolean);
-
   return { points, arcs, rings, transport };
 }
 
 function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
   const { points, arcs, rings } = buildData(parcels, isDark, flightPositions);
-
   globe
     .pointsData(points)
     .pointLat((d: any) => d.lat).pointLng((d: any) => d.lng)
@@ -227,7 +211,6 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
       </div>
     `);
-
   globe
     .arcsData(arcs)
     .arcStartLat((d: any) => d.startLat).arcStartLng((d: any) => d.startLng)
@@ -236,7 +219,6 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .arcAltitude(ARC_ALTITUDE).arcStroke(0.5)
     .arcDashLength(0.4).arcDashGap(0.2).arcDashAnimateTime(2500)
     .arcLabel((d: any) => `<div style="font-family:monospace;font-size:11px;color:${d.color};background:rgba(10,0,0,0.8);padding:6px 10px;border-radius:6px">${d.label}</div>`);
-
   globe
     .ringsData(rings)
     .ringLat((d: any) => d.lat).ringLng((d: any) => d.lng)
@@ -251,6 +233,18 @@ function applyHexColors(globe: any, isDark: boolean) {
 const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
 const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
 
+function applyLighting(scene: THREE.Scene, isDark: boolean) {
+  const toRemove: THREE.Object3D[] = [];
+  scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
+  toRemove.forEach(l => scene.remove(l));
+  const amb = isDark ? AMBIENT.dark : AMBIENT.light;
+  const dir = isDark ? DIRLIGHT.dark : DIRLIGHT.light;
+  scene.add(new THREE.AmbientLight(0xffffff, amb.intensity));
+  const dirLight = new THREE.DirectionalLight(dir.color, dir.intensity);
+  dirLight.position.set(1, 1, 1);
+  scene.add(dirLight);
+}
+
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
   const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
   globe
@@ -260,22 +254,19 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       emissive: new THREE.Color(ocean.emissive),
       transparent: true, opacity: 0.95,
     }));
-
-  const toRemove: THREE.Object3D[] = [];
-  scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
-  toRemove.forEach(l => scene.remove(l));
-
-  if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-    const dir = new THREE.DirectionalLight(0xff9944, 0.8);
-    dir.position.set(1, 1, 1); scene.add(dir);
-  } else {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dir = new THREE.DirectionalLight(0xd4eeff, 1.1);
-    dir.position.set(1, 1, 1); scene.add(dir);
-  }
-
+  applyLighting(scene, isDark);
   applyHexColors(globe, isDark);
+}
+
+function applyBloom(composer: EffectComposer, isDark: boolean) {
+  const passes = (composer as any).passes as any[];
+  const effectPass = passes.find((p: any) => p instanceof EffectPass);
+  if (!effectPass) return;
+  const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
+  if (!bloom) return;
+  const b = isDark ? BLOOM.dark : BLOOM.light;
+  bloom.intensity = b.intensity;
+  bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = b.threshold;
 }
 
 function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
@@ -321,17 +312,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       });
       spritesRef.current = setupSprites(sceneRef.current, newTransport);
     }
-    if (composerRef.current) {
-      const passes = (composerRef.current as any).passes as any[];
-      const effectPass = passes.find((p: any) => p instanceof EffectPass);
-      if (effectPass) {
-        const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
-        if (bloom) {
-          bloom.intensity = isDark ? 1.6 : 0.2;
-          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.3 : 0.5;
-        }
-      }
-    }
+    if (composerRef.current) applyBloom(composerRef.current, isDark);
   }, [parcels, theme, globeRef, flightPositions]);
 
   useEffect(() => {
@@ -343,13 +324,13 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
 
-      // Pré-calcul du centroïde latitude pour chaque feature (fait une seule fois au chargement)
       countries.features.forEach((f: any, i: number) => {
         f.__hexIdx = i;
         f.__centroidLat = featureCentroidLat(f);
       });
 
       const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
+      const b = isDark ? BLOOM.dark : BLOOM.light;
 
       const globe = (GlobeGL as any)(
         { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
@@ -374,16 +355,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
-
-      if (isDark) {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-        const dir = new THREE.DirectionalLight(0xff9944, 0.8);
-        dir.position.set(1, 1, 1); scene.add(dir);
-      } else {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        const dir = new THREE.DirectionalLight(0xd4eeff, 1.1);
-        dir.position.set(1, 1, 1); scene.add(dir);
-      }
+      applyLighting(scene, isDark);
 
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
@@ -417,29 +389,26 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
-        intensity: isDark ? 1.6 : 0.5,
-        luminanceThreshold: isDark ? 0.15 : 0.35,
-        luminanceSmoothing: 0.4, mipmapBlur: true,
+        intensity: b.intensity,
+        luminanceThreshold: b.threshold,
+        luminanceSmoothing: b.smoothing,
+        mipmapBlur: true,
       })));
       composerRef.current = composer;
 
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
         globe.controls().update();
-
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
           const mode = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
-
           let targetLat: number, targetLng: number, targetAlt: number;
           let targetHdg: number | null = null;
-
           if (livePos?.lat != null && livePos?.lng != null) {
             const rawProgress = livePos.progress;
             const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
               ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-
             if (mode === "live") {
               targetLat = livePos.lat; targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
@@ -454,19 +423,15 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
             targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
-
           arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
           arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
           arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
           if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
-
           spriteStateRef.current.set(arc.id, { lat: arc._curLat!, lng: arc._curLng!, alt: arc._curAlt!, hdg: arc._curHdg! });
-
           const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
-
         composer.render();
       };
       animate();
