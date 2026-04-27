@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import Optional
 import httpx
 from django.conf import settings
@@ -7,17 +6,17 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-OPENSKY_BASE    = "https://opensky-network.org/api"
+OPENSKY_BASE      = "https://opensky-network.org/api"
 OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network"
     "/protocol/openid-connect/token"
 )
-MIN_CRUISE_ALT = 1000   # metres
-CACHE_TTL      = 60     # secondes — position live
-TOKEN_CACHE_KEY = "opensky_oauth2_token"
-TOKEN_REFRESH_MARGIN = 30  # secondes avant expiry pour renouveler
+OPENSKY_CLIENT_ID = "opensky-api"   # client_id public OpenSky
+MIN_CRUISE_ALT    = 1000            # metres
+CACHE_TTL         = 60              # secondes — position live
+TOKEN_CACHE_KEY   = "opensky_oauth2_token"
+TOKEN_REFRESH_MARGIN = 30
 
-# Mapping IATA prefix → ICAO callsign prefix
 IATA_TO_ICAO_PREFIX = {
     "SQ": "SIA",  "AF": "AFR",  "BA": "BAW",  "LH": "DLH",  "KL": "KLM",
     "EK": "UAE",  "QR": "QTR",  "CX": "CPA",  "JL": "JAL",  "NH": "ANA",
@@ -48,19 +47,18 @@ def _iata_to_icao_callsign(flight_number: str) -> Optional[str]:
 
 def _get_oauth2_token() -> Optional[str]:
     """
-    Récupère un Bearer token OAuth2 OpenSky via client_credentials.
-    Utilise le cache Django pour éviter de refaire le flow à chaque appel.
-    Credentials : OPENSKY_USER (client_id) + OPENSKY_PASS (client_secret).
+    Token OAuth2 via Resource Owner Password Credentials (ROPC).
+    OpenSky utilise username/password + client_id public 'opensky-api'.
     """
     cached = cache.get(TOKEN_CACHE_KEY)
     if cached:
         logger.debug("[OpenSky] Token OAuth2 depuis cache")
         return cached
 
-    client_id     = getattr(settings, "OPENSKY_USER", "") or ""
-    client_secret = getattr(settings, "OPENSKY_PASS", "") or ""
+    username = getattr(settings, "OPENSKY_USER", "") or ""
+    password = getattr(settings, "OPENSKY_PASS", "") or ""
 
-    if not client_id or not client_secret:
+    if not username or not password:
         logger.warning("[OpenSky] OPENSKY_USER/OPENSKY_PASS absents — mode anonyme")
         return None
 
@@ -68,9 +66,10 @@ def _get_oauth2_token() -> Optional[str]:
         resp = httpx.post(
             OPENSKY_TOKEN_URL,
             data={
-                "grant_type":    "client_credentials",
-                "client_id":     client_id,
-                "client_secret": client_secret,
+                "grant_type": "password",
+                "client_id":  OPENSKY_CLIENT_ID,
+                "username":   username,
+                "password":   password,
             },
             timeout=10.0,
         )
@@ -80,7 +79,7 @@ def _get_oauth2_token() -> Optional[str]:
         expires_in = int(data.get("expires_in", 1800))
         ttl        = max(expires_in - TOKEN_REFRESH_MARGIN, 60)
         cache.set(TOKEN_CACHE_KEY, token, ttl)
-        logger.info(f"[OpenSky] Token OAuth2 obtenu, expire dans {expires_in}s")
+        logger.info(f"[OpenSky] Token OAuth2 obtenu (expires_in={expires_in}s)")
         return token
     except Exception as e:
         logger.warning(f"[OpenSky] Impossible d'obtenir le token OAuth2: {e}")
@@ -88,15 +87,11 @@ def _get_oauth2_token() -> Optional[str]:
 
 
 def _auth_headers() -> dict:
-    """Retourne les headers d'auth (Bearer si dispo, sinon vide = anonyme)."""
     token = _get_oauth2_token()
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def _query_opensky(callsign: str) -> Optional[dict]:
-    """Tente un appel OpenSky pour un callsign donné."""
     target = callsign.upper().strip()
     padded = target.ljust(8)
 
@@ -126,12 +121,10 @@ def _query_opensky(callsign: str) -> Optional[dict]:
         )
 
         for s in states:
-            raw       = (s[1] or "").strip().upper()
-            lat       = s[6]
-            lng       = s[5]
-            geo_alt   = s[13]
-            baro_alt  = s[7]
-            alt       = geo_alt if geo_alt is not None else baro_alt
+            raw      = (s[1] or "").strip().upper()
+            lat      = s[6]
+            lng      = s[5]
+            alt      = s[13] if s[13] is not None else s[7]
             on_ground = s[8]
 
             if target not in raw:
@@ -140,7 +133,7 @@ def _query_opensky(callsign: str) -> Optional[dict]:
                 logger.info(f"[OpenSky] {raw!r} au sol ou position inconnue")
                 continue
             if alt is None or alt < MIN_CRUISE_ALT:
-                logger.info(f"[OpenSky] {raw!r} alt={alt}m trop bas, rejete")
+                logger.info(f"[OpenSky] {raw!r} alt={alt}m trop bas, rejeté")
                 continue
 
             logger.info(f"[OpenSky] ✓ {raw!r} lat={lat} lng={lng} alt={alt}m")
@@ -148,7 +141,6 @@ def _query_opensky(callsign: str) -> Optional[dict]:
                 "lat": lat, "lng": lng,
                 "altitude": alt, "speed": s[9], "heading": s[10],
                 "callsign": raw,
-                "origin_iata": None, "destination_iata": None,
                 "source": "live", "provider": "opensky",
             }
 
@@ -161,12 +153,6 @@ def _query_opensky(callsign: str) -> Optional[dict]:
 
 
 def get_flight_live_position(flight_number: str) -> Optional[dict]:
-    """
-    Cherche la position live sur OpenSky :
-      1. Callsign IATA  (ex: DL267)
-      2. Callsign ICAO  (ex: DAL267)
-    Cache 60s. Auth OAuth2 si credentials dispo.
-    """
     iata = flight_number.upper().strip()
     icao = _iata_to_icao_callsign(iata)
 
