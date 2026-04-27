@@ -66,29 +66,74 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-// Sources GeoJSON fiables avec fallback
-const GEOJSON_SOURCES = [
+const TOPO_SOURCES = [
   "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json",
   "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
 ];
 
+// ─── Conversion TopoJSON → GeoJSON inline (sans dépendance externe) ──────────────────
+function topoFeature(topology: any, object: any): any {
+  function decode(arcs: number[][], topology: any): number[][][] {
+    return arcs.map(arcIndices => {
+      let coords: number[][] = [];
+      for (const idx of arcIndices) {
+        const arc = idx < 0 ? [...topology.arcs[~idx]].reverse() : [...topology.arcs[idx]];
+        let x = 0, y = 0;
+        const decoded = arc.map((delta: number[]) => {
+          x += delta[0]; y += delta[1];
+          return [x, y];
+        });
+        coords = coords.concat(coords.length ? decoded.slice(1) : decoded);
+      }
+      return coords;
+    });
+  }
+
+  function project(coords: number[][], transform: any): number[][] {
+    if (!transform) return coords;
+    const { scale: [sx, sy], translate: [tx, ty] } = transform;
+    return coords.map(([x, y]) => [x * sx + tx, y * sy + ty]);
+  }
+
+  const features = object.geometries.map((geom: any) => {
+    let geometry: any;
+    if (geom.type === "Polygon") {
+      const rings = decode(geom.arcs, topology);
+      geometry = {
+        type: "Polygon",
+        coordinates: rings.map(r => project(r, topology.transform).map(([x, y]) => [x, y])),
+      };
+    } else if (geom.type === "MultiPolygon") {
+      const polys = geom.arcs.map((poly: number[][][]) => decode(poly, topology));
+      geometry = {
+        type: "MultiPolygon",
+        coordinates: polys.map((poly: number[][][]) =>
+          poly.map((ring: number[][]) => project(ring, topology.transform).map(([x, y]) => [x, y]))
+        ),
+      };
+    } else {
+      geometry = { type: geom.type, coordinates: [] };
+    }
+    return { type: "Feature", id: geom.id, properties: geom.properties ?? {}, geometry };
+  });
+
+  return { type: "FeatureCollection", features };
+}
+
 async function fetchCountries(): Promise<any> {
-  // world-atlas fournit un TopoJSON — on le convertit en GeoJSON via topojson-client
-  const { default: topojson } = await import("topojson-client" as any);
-  for (const url of GEOJSON_SOURCES) {
+  for (const url of TOPO_SOURCES) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
       const topo = await res.json();
-      // countries-110m contient l'objet "countries"
-      const geojson = topojson.feature(topo, topo.objects.countries) as any;
-      return geojson;
+      return topoFeature(topo, topo.objects.countries);
     } catch {
       continue;
     }
   }
   throw new Error("Impossible de charger les donn\u00e9es pays");
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
@@ -433,7 +478,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
-          const mode = positionModeRef.current[arc.id] ?? (livePos?.source === "live" ? "live" : "arc");
+          const mode = positionModeRef.current[arc.id] ?? "arc";
           let targetLat: number, targetLng: number, targetAlt: number;
           let targetHdg: number | null = null;
           if (livePos?.lat != null && livePos?.lng != null) {
