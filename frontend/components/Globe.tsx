@@ -71,20 +71,28 @@ const TOPO_SOURCES = [
   "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
 ];
 
+// ─── Détection antiméridien ────────────────────────────────────────────────
+// Retourne true si le ring traverse l'antiméridien (saut > 180° en lng)
+function crossesAntimeridian(ring: number[][]): boolean {
+  for (let i = 0; i < ring.length - 1; i++) {
+    if (Math.abs(ring[i + 1][0] - ring[i][0]) > 180) return true;
+  }
+  return false;
+}
+
 // ─── TopoJSON → GeoJSON inline ────────────────────────────────────────────
 function topoFeature(topology: any, object: any): any {
   const { scale: [sx, sy], translate: [tx, ty] } = topology.transform;
 
-  // Décode un arc TopoJSON en coordonnées projetées [lng, lat] avec clamp
   function decodeArc(idx: number): number[][] {
     const raw = topology.arcs[idx < 0 ? ~idx : idx];
     let x = 0, y = 0;
     const pts = raw.map((d: number[]) => {
       x += d[0]; y += d[1];
-      return [
-        Math.max(-180, Math.min(180, x * sx + tx)),
-        Math.max(-90,  Math.min(90,  y * sy + ty)),
-      ];
+      // Pas de clamp ici — on garde les valeurs brutes pour détecter l'antiméridien
+      const lng = x * sx + tx;
+      const lat = y * sy + ty;
+      return [lng, lat];
     });
     return idx < 0 ? pts.reverse() : pts;
   }
@@ -95,7 +103,6 @@ function topoFeature(topology: any, object: any): any {
       const pts = decodeArc(idx);
       coords = coords.concat(coords.length ? pts.slice(1) : pts);
     }
-    // Ferme le ring
     if (coords.length > 0) {
       const first = coords[0], last = coords[coords.length - 1];
       if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
@@ -103,13 +110,15 @@ function topoFeature(topology: any, object: any): any {
     return coords;
   }
 
-  // Un ring valide pour h3 doit avoir ≥ 4 points et toutes les coords dans les bornes
+  // Un ring valide : ≥ 4 pts, toutes coords finies, dans les bornes strictes,
+  // et NE traverse PAS l'antiméridien (ces polygones cassent h3)
   function isValidRing(ring: number[][]): boolean {
     if (ring.length < 4) return false;
+    if (crossesAntimeridian(ring)) return false;
     return ring.every(([lng, lat]) =>
       isFinite(lng) && isFinite(lat) &&
-      lng >= -180 && lng <= 180 &&
-      lat >= -90  && lat <= 90
+      lng > -181 && lng < 181 &&
+      lat > -91  && lat < 91
     );
   }
 
@@ -153,7 +162,7 @@ async function fetchCountries(): Promise<any> {
       continue;
     }
   }
-  throw new Error("Impossible de charger les donn\u00e9es pays");
+  throw new Error("Impossible de charger les données pays");
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
