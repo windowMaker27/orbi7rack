@@ -136,6 +136,7 @@ class Command(BaseCommand):
         flight_number = parts[0].upper()
 
         if len(parts) == 3:
+            # Bypass direct — la route est explicitement fournie, pas d'appel API
             return {
                 "flight_number": flight_number,
                 "origin_iata":   parts[1].upper(),
@@ -191,7 +192,7 @@ class Command(BaseCommand):
         if orig:
             events.append(TrackingEvent(
                 parcel=parcel,
-                timestamp=now + timezone.timedelta(hours=-2),
+                timestamp=now - timezone.timedelta(hours=2),
                 location=origin_name,
                 latitude=orig["lat"],
                 longitude=orig["lng"],
@@ -211,15 +212,18 @@ class Command(BaseCommand):
 
         TrackingEvent.objects.bulk_create(events)
         self.stdout.write(self.style.SUCCESS(
-            f"✅ {tracking_number} — {origin_country} → {dest_country} — vol {fn} ({len(events)} events)"
+            f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events)} events)"
         ))
 
-    # Vols réguliers longue distance — haute probabilité d'être en l'air
+    # Vols longue distance — haute probabilité d'être en l'air
+    # Format : flight_number, origin_iata, dest_iata, airline
+    # Toujours utiliser le format bypass ici pour garantir la route souhaitée
     HARDCODED = [
         {"flight_number": "AF011",  "origin_iata": "CDG", "dest_iata": "JFK", "airline": "Air France"},
         {"flight_number": "EK075",  "origin_iata": "DXB", "dest_iata": "LAX", "airline": "Emirates"},
         {"flight_number": "QR007",  "origin_iata": "DOH", "dest_iata": "JFK", "airline": "Qatar Airways"},
         {"flight_number": "SQ321",  "origin_iata": "SIN", "dest_iata": "LHR", "airline": "Singapore Airlines"},
+        {"flight_number": "AI127",  "origin_iata": "VIE", "dest_iata": "ORD", "airline": "Air India"},
     ]
 
     def handle(self, *args, **options):
