@@ -66,75 +66,40 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-const TOPO_SOURCES = [
-  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json",
-  "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
+// GeoJSON natifs — pas de conversion TopoJSON nécessaire
+const GEOJSON_SOURCES = [
+  "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson",
+  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json",
 ];
 
-// ─── Conversion TopoJSON → GeoJSON inline (sans dépendance externe) ───────────
-function topoFeature(topology: any, object: any): any {
-  function decode(arcs: number[][], topology: any): number[][][] {
-    return arcs.map(arcIndices => {
-      let coords: number[][] = [];
-      for (const idx of arcIndices) {
-        const arc = idx < 0 ? [...topology.arcs[~idx]].reverse() : [...topology.arcs[idx]];
-        let x = 0, y = 0;
-        const decoded = arc.map((delta: number[]) => {
-          x += delta[0]; y += delta[1];
-          return [x, y];
-        });
-        // Retire le 1er point si ce n'est pas le 1er arc (évite doublon)
-        coords = coords.concat(coords.length ? decoded.slice(1) : decoded);
-      }
-      return coords;
-    });
-  }
-
-  function project(coords: number[][], transform: any): number[][] {
-    if (!transform) return coords;
-    const { scale: [sx, sy], translate: [tx, ty] } = transform;
-    return coords.map(([x, y]) => [x * sx + tx, y * sy + ty]);
-  }
-
-  const features = object.geometries.map((geom: any) => {
-    let geometry: any;
-    if (geom.type === "Polygon") {
-      const rings = decode(geom.arcs, topology);
-      geometry = {
-        type: "Polygon",
-        coordinates: rings.map(r => project(r, topology.transform).map(([x, y]) => [x, y])),
-      };
-    } else if (geom.type === "MultiPolygon") {
-      const polys = geom.arcs.map((poly: number[][][]) => decode(poly, topology));
-      geometry = {
-        type: "MultiPolygon",
-        coordinates: polys.map((poly: number[][][]) =>
-          poly.map((ring: number[][]) => project(ring, topology.transform).map(([x, y]) => [x, y]))
-        ),
-      };
-    } else {
-      geometry = { type: geom.type, coordinates: [] };
-    }
-    return { type: "Feature", id: geom.id, properties: geom.properties ?? {}, geometry };
-  });
-
-  return { type: "FeatureCollection", features };
-}
-
 async function fetchCountries(): Promise<any> {
-  for (const url of TOPO_SOURCES) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const topo = await res.json();
-      return topoFeature(topo, topo.objects.countries);
-    } catch {
-      continue;
+  // Source 1 : GeoJSON natif (datasets/geo-countries)
+  try {
+    const res = await fetch(GEOJSON_SOURCES[0]);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.features?.length > 0) return data;
     }
-  }
-  throw new Error("Impossible de charger les donn\u00e9es pays");
+  } catch { /* fallback */ }
+
+  // Source 2 : countries-50m via esm.sh (topojson-client en CDN, pas en npm)
+  try {
+    const [topoRes, { feature }] = await Promise.all([
+      fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json"),
+      import("https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" as any),
+    ]);
+    if (topoRes.ok) {
+      const topo = await topoRes.json();
+      return feature(topo, topo.objects.countries);
+    }
+  } catch { /* fallback */ }
+
+  // Source 3 : GeoJSON simplifié depuis unpkg
+  const res = await fetch("https://unpkg.com/geojson-world-map@1.0.0/index.json");
+  if (res.ok) return res.json();
+
+  throw new Error("Impossible de charger les données pays");
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
