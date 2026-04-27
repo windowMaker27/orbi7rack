@@ -51,29 +51,65 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
 /**
- * Palette satellite naturelle — mode light (terres uniquement).
- * L'eau = globeMaterial color (#1a6fa8) visible sous les hexagones.
- * Pas de bleu ici : les hex ne couvrent que les polygones pays.
+ * Couleur satellite light basée sur la latitude absolue du centroïde du feature.
+ * Simule une répartition biome naturelle sans base de données externe :
+ *  0–15°  → forêt tropicale dense (vert profond)
+ * 15–22°  → savane verte
+ * 22–30°  → savane aride / brousse (ocre chaud)
+ * 30–37°  → semi-aride / méditerranéen (beige-marron)
+ * 37–45°  → tempéré / prairie (vert moyen)
+ * 45–55°  → bocage tempéré (vert soutenu)
+ * 55–65°  → boréal / taïga (vert sombre)
+ * 65–75°  → toundra (vert-gris pâle)
+ * 75–90°  → polaire / glace (beige très clair)
  */
-const HEX_PALETTE_LIGHT = [
-  "#4a7c3f", // forêt tropicale
-  "#7ab648", // prairie / savane
-  "#c8b560", // steppe / brousse
-  "#d4a44c", // désert sableux
-  "#b07840", // relief / montagne
-  "#8c5e30", // relief aride
-  "#e8d5a0", // sable / désert clair
-  "#5a9e50", // forêt tempérée
-  "#9ab870", // bocage / zone mixte
-  "#c4956a", // terres arides ocre
-];
+function latitudeBiomeColor(lat: number): string {
+  const a = Math.abs(lat);
+  if (a < 15)  return "#4a7c3f"; // forêt tropicale
+  if (a < 22)  return "#7ab648"; // savane verte
+  if (a < 30)  return "#c8a84b"; // savane aride / brousse
+  if (a < 37)  return "#b89060"; // semi-aride / méditerranéen
+  if (a < 45)  return "#8ab55a"; // tempéré / prairie
+  if (a < 55)  return "#6a9e48"; // bocage tempéré
+  if (a < 65)  return "#4d7a38"; // boréal / taïga
+  if (a < 75)  return "#7a9e6a"; // toundra
+  return "#c8d4b8";              // polaire / glace
+}
 
-function stableHexColor(featureIndex: number, isDark: boolean): string {
-  const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
-  return palette[featureIndex % palette.length];
+/**
+ * Calcule la latitude moyenne du centroïde d'un feature GeoJSON.
+ * Utilise le plus grand anneau du polygone (ou MultiPolygon).
+ */
+function featureCentroidLat(feature: any): number {
+  try {
+    const geo = feature.geometry;
+    let coords: number[][];
+    if (geo.type === "Polygon") {
+      coords = geo.coordinates[0];
+    } else if (geo.type === "MultiPolygon") {
+      coords = geo.coordinates
+        .map((p: number[][][]) => p[0])
+        .reduce((a: number[][], b: number[][]) => b.length > a.length ? b : a);
+    } else {
+      return 0;
+    }
+    const sum = coords.reduce((acc: number, c: number[]) => acc + c[1], 0);
+    return sum / coords.length;
+  } catch {
+    return 0;
+  }
+}
+
+function stableHexColor(feature: any, isDark: boolean): string {
+  if (isDark) {
+    return HEX_PALETTE_DARK[(feature.__hexIdx ?? 0) % HEX_PALETTE_DARK.length];
+  }
+  // Mode light : couleur basée sur la latitude du centroïde (pré-calculée à l'init)
+  const lat = feature.__centroidLat ?? featureCentroidLat(feature);
+  return latitudeBiomeColor(lat);
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -209,10 +245,9 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
 }
 
 function applyHexColors(globe: any, isDark: boolean) {
-  globe.hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark));
+  globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
 }
 
-// Couleurs ocean (sphère nue) selon le thème
 const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
 const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
 
@@ -225,17 +260,6 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       emissive: new THREE.Color(ocean.emissive),
       transparent: true, opacity: 0.95,
     }));
-
-  //setTimeout(() => {
-  //  scene.traverse((obj: any) => {
-  //    if (obj.isLine || obj.isLineSegments) {
-  //      if (obj.material) obj.material = new THREE.LineBasicMaterial({
-  //        color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-  //        transparent: true, opacity: 0.25,
-  //      });
-  //    }
-  //  });
-  //}, 50);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
@@ -319,7 +343,11 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
       ]);
 
-      countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
+      // Pré-calcul du centroïde latitude pour chaque feature (fait une seule fois au chargement)
+      countries.features.forEach((f: any, i: number) => {
+        f.__hexIdx = i;
+        f.__centroidLat = featureCentroidLat(f);
+      });
 
       const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
 
@@ -340,7 +368,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
-        .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark))
+        .hexPolygonColor((feat: any) => stableHexColor(feat, isDark))
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
