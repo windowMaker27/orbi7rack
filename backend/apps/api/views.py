@@ -72,6 +72,75 @@ COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "QA": (25.3548, 51.1839),
 }
 
+# Coordonnées des principaux aéroports IATA
+# Utilisé pour résoudre origin/destination sur les vols live (plus précis que les centroïdes pays)
+AIRPORT_COORDS: dict[str, tuple[float, float]] = {
+    "LHR": (51.4700, -0.4543),
+    "CDG": (49.0097, 2.5479),
+    "AMS": (52.3086, 4.7639),
+    "FRA": (50.0379, 8.5622),
+    "MAD": (40.4936, -3.5668),
+    "BCN": (41.2974, 2.0833),
+    "FCO": (41.8003, 12.2389),
+    "MUC": (48.3538, 11.7861),
+    "ZRH": (47.4647, 8.5492),
+    "VIE": (48.1103, 16.5697),
+    "BRU": (50.9014, 4.4844),
+    "CPH": (55.6180, 12.6508),
+    "OSL": (60.1939, 11.1004),
+    "ARN": (59.6519, 17.9186),
+    "HEL": (60.3172, 24.9633),
+    "LIS": (38.7813, -9.1359),
+    "ATH": (37.9364, 23.9445),
+    "IST": (41.2753, 28.7519),
+    "DXB": (25.2532, 55.3657),
+    "AUH": (24.4330, 54.6511),
+    "DOH": (25.2609, 51.6138),
+    "SIN": (1.3644, 103.9915),
+    "HKG": (22.3080, 113.9185),
+    "NRT": (35.7720, 140.3929),
+    "HND": (35.5494, 139.7798),
+    "ICN": (37.4602, 126.4407),
+    "PVG": (31.1443, 121.8083),
+    "PEK": (40.0799, 116.6031),
+    "CAN": (23.3924, 113.2988),
+    "BKK": (13.6811, 100.7472),
+    "KUL": (2.7456, 101.7099),
+    "CGK": (-6.1256, 106.6558),
+    "MNL": (14.5086, 121.0197),
+    "DEL": (28.5562, 77.1000),
+    "BOM": (19.0896, 72.8656),
+    "SYD": (-33.9399, 151.1753),
+    "MEL": (-37.6690, 144.8410),
+    "AKL": (-37.0082, 174.7917),
+    "JFK": (40.6413, -73.7781),
+    "LAX": (33.9425, -118.4081),
+    "ORD": (41.9742, -87.9073),
+    "ATL": (33.6407, -84.4277),
+    "DFW": (32.8998, -97.0403),
+    "MIA": (25.7959, -80.2870),
+    "SFO": (37.6213, -122.3790),
+    "SEA": (47.4502, -122.3088),
+    "BOS": (42.3656, -71.0096),
+    "YYZ": (43.6777, -79.6248),
+    "YVR": (49.1967, -123.1815),
+    "MEX": (19.4363, -99.0721),
+    "GRU": (-23.4356, -46.4731),
+    "EZE": (-34.8222, -58.5358),
+    "SCL": (-33.3930, -70.7858),
+    "BOG": (4.7016, -74.1469),
+    "JNB": (-26.1367, 28.2411),
+    "CAI": (30.1219, 31.4056),
+    "SVO": (55.9736, 37.4125),
+    "DME": (55.4088, 37.9063),
+}
+
+
+def _airport_coords(iata: str) -> tuple[float, float] | None:
+    if not iata:
+        return None
+    return AIRPORT_COORDS.get(iata.upper())
+
 
 def _country_centroid(country_code: str) -> tuple[float, float] | None:
     if not country_code:
@@ -182,7 +251,7 @@ class ParcelViewSet(
     def flight_position(self, request, pk=None):
         parcel = self.get_object()
 
-        # --- Coordonnées d'arc : centroid pays ---
+        # --- Coordonnées d'arc : centroid pays (fallback simulation) ---
         origin_coords = _country_centroid(parcel.origin_country)
         dest_coords   = _country_centroid(parcel.dest_country)
 
@@ -200,11 +269,20 @@ class ParcelViewSet(
         if parcel.flight_number:
             position = get_flight_live_position(parcel.flight_number)
             if position:
-                if origin_coords and dest_coords:
+                # Priorité : coords aéroports IATA retournés par le provider live
+                # (sens de vol correct, plus précis que les centroïdes pays du colis)
+                live_origin = _airport_coords(position.get("origin_iata"))
+                live_dest   = _airport_coords(position.get("destination_iata"))
+
+                # Fallback sur centroïdes pays si IATA absent ou inconnu
+                final_origin = live_origin or origin_coords
+                final_dest   = live_dest   or dest_coords
+
+                if final_origin and final_dest:
                     current = (position["lat"], position["lng"])
-                    position["progress"]    = _compute_progress(origin_coords, dest_coords, current)
-                    position["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
-                    position["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}
+                    position["progress"]    = _compute_progress(final_origin, final_dest, current)
+                    position["origin"]      = {"lat": final_origin[0], "lng": final_origin[1]}
+                    position["destination"] = {"lat": final_dest[0],   "lng": final_dest[1]}
 
                 # Persiste la position live en DB
                 parcel.last_live_lat = position["lat"]
