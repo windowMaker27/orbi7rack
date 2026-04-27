@@ -239,23 +239,23 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
       transparent: true, opacity: 0.95,
     }));
 
-  setTimeout(() => {
-    scene.traverse((obj: any) => {
-      if (obj.isLine || obj.isLineSegments) {
-        if (obj.material) obj.material = new THREE.LineBasicMaterial({
-          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
-          transparent: true, opacity: 0.25,
-        });
-      }
-    });
-  }, 50);
+  //setTimeout(() => {
+  //  scene.traverse((obj: any) => {
+  //    if (obj.isLine || obj.isLineSegments) {
+  //      if (obj.material) obj.material = new THREE.LineBasicMaterial({
+  //        color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+  //        transparent: true, opacity: 0.25,
+  //      });
+  //    }
+  //  });
+  //}, 50);
 
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l => scene.remove(l));
 
   if (isDark) {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
     const dir = new THREE.DirectionalLight(0xff9944, 0.8);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
@@ -322,8 +322,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       if (effectPass) {
         const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
         if (bloom) {
-          bloom.intensity = isDark ? 1.6 : 0.5;
-          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.15 : 0.35;
+          bloom.intensity = isDark ? 1.6 : 0.2;
+          bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = isDark ? 0.3 : 0.5;
         }
       }
     }
