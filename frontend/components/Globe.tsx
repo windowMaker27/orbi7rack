@@ -66,119 +66,24 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-const TOPO_SOURCES = [
-  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json",
-  "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
+// Source officielle utilisée par l'exemple globe.gl — GeoJSON Natural Earth direct, pas de conversion TopoJSON
+const GEOJSON_SOURCES = [
+  "https://raw.githubusercontent.com/vasturiano/globe.gl/master/example/hexed-polygons/ne_110m_admin_0_countries.geojson",
+  "https://cdn.jsdelivr.net/gh/vasturiano/globe.gl@master/example/hexed-polygons/ne_110m_admin_0_countries.geojson",
 ];
 
-// ─── TopoJSON → GeoJSON inline ────────────────────────────────────────────
-function topoFeature(topology: any, object: any): any {
-  const { scale: [sx, sy], translate: [tx, ty] } = topology.transform;
-
-  function decodeArc(idx: number): number[][] {
-    const raw = topology.arcs[idx < 0 ? ~idx : idx];
-    let x = 0, y = 0;
-    const pts = raw.map((d: number[]) => {
-      x += d[0]; y += d[1];
-      // Clamp strictement dans les bornes valides
-      const lng = Math.max(-179.9999, Math.min(179.9999, x * sx + tx));
-      const lat = Math.max(-89.9999,  Math.min(89.9999,  y * sy + ty));
-      return [lng, lat];
-    });
-    return idx < 0 ? pts.reverse() : pts;
-  }
-
-  function buildRing(arcIndices: number[]): number[][] {
-    let coords: number[][] = [];
-    for (const idx of arcIndices) {
-      const pts = decodeArc(idx);
-      coords = coords.concat(coords.length ? pts.slice(1) : pts);
-    }
-    // Ferme le ring
-    if (coords.length > 0) {
-      const first = coords[0], last = coords[coords.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
-    }
-    return coords;
-  }
-
-  // Aire signée (shoelace) — positive = CCW (sens antihoraire = extérieur GeoJSON)
-  function signedArea(ring: number[][]): number {
-    let area = 0;
-    const n = ring.length;
-    for (let i = 0; i < n - 1; i++) {
-      area += ring[i][0] * ring[i + 1][1];
-      area -= ring[i + 1][0] * ring[i][1];
-    }
-    return area / 2;
-  }
-
-  // globe.gl/h3 attend les rings extérieurs en CCW (sens antihoraire)
-  // et les trous en CW. TopoJSON est souvent l'inverse. On corrige.
-  function fixWinding(ring: number[][], isOuter: boolean): number[][] {
-    const area = signedArea(ring);
-    // CCW: area > 0 (outer ring), CW: area < 0 (hole)
-    const isCCW = area > 0;
-    if (isOuter && !isCCW) return [...ring].reverse();
-    if (!isOuter && isCCW) return [...ring].reverse();
-    return ring;
-  }
-
-  // Un ring valide : ≥ 4 pts, coords finies et dans les bornes
-  function isValidRing(ring: number[][]): boolean {
-    if (ring.length < 4) return false;
-    return ring.every(([lng, lat]) =>
-      isFinite(lng) && isFinite(lat) &&
-      lng >= -180 && lng <= 180 &&
-      lat >= -90  && lat <= 90
-    );
-  }
-
-  function sanitizePolygon(rings: number[][][]): number[][][] {
-    return rings
-      .map((ring, i) => fixWinding(ring, i === 0))
-      .filter(isValidRing);
-  }
-
-  const features = object.geometries.map((geom: any) => {
-    try {
-      let geometry: any;
-      if (geom.type === "Polygon") {
-        const rings = sanitizePolygon(geom.arcs.map(buildRing));
-        if (rings.length === 0) return null;
-        geometry = { type: "Polygon", coordinates: rings };
-      } else if (geom.type === "MultiPolygon") {
-        const polys = geom.arcs
-          .map((poly: number[][][]) => sanitizePolygon(poly.map(buildRing)))
-          .filter((p: number[][][]) => p.length > 0);
-        if (polys.length === 0) return null;
-        geometry = { type: "MultiPolygon", coordinates: polys };
-      } else {
-        return null;
-      }
-      return { type: "Feature", id: geom.id, properties: geom.properties ?? {}, geometry };
-    } catch {
-      return null;
-    }
-  }).filter(Boolean);
-
-  return { type: "FeatureCollection", features };
-}
-
 async function fetchCountries(): Promise<any> {
-  for (const url of TOPO_SOURCES) {
+  for (const url of GEOJSON_SOURCES) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
-      const topo = await res.json();
-      return topoFeature(topo, topo.objects.countries);
+      return await res.json();
     } catch {
       continue;
     }
   }
   throw new Error("Impossible de charger les données pays");
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
