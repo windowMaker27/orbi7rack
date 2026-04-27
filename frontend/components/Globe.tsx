@@ -66,21 +66,30 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
-// Source officielle utilisée par l'exemple globe.gl — GeoJSON Natural Earth direct, pas de conversion TopoJSON
-const GEOJSON_SOURCES = [
-  "https://raw.githubusercontent.com/vasturiano/globe.gl/master/example/hexed-polygons/ne_110m_admin_0_countries.geojson",
-  "https://cdn.jsdelivr.net/gh/vasturiano/globe.gl@master/example/hexed-polygons/ne_110m_admin_0_countries.geojson",
-];
-
 async function fetchCountries(): Promise<any> {
-  for (const url of GEOJSON_SOURCES) {
+  // 1. Route locale Next.js (proxy serveur, pas de CORS)
+  try {
+    const res = await fetch("/api/countries");
+    if (res.ok) return await res.json();
+  } catch { /* fallback */ }
+
+  // 2. Fallback direct (si api route indisponible)
+  const fallbacks = [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json",
+  ];
+  for (const url of fallbacks) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
-      return await res.json();
-    } catch {
-      continue;
-    }
+      const data = await res.json();
+      // Si c'est du TopoJSON (world-atlas), convertir
+      if (data.type === "Topology") {
+        const { feature } = await import("topojson-client");
+        return feature(data, data.objects.countries);
+      }
+      return data;
+    } catch { continue; }
   }
   throw new Error("Impossible de charger les données pays");
 }
