@@ -54,45 +54,26 @@ const LERP_HDG     = 0.06;
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
 /**
- * Palette satellite naturelle — mode light
- * 5 tons continentaux + 3 tons océaniques intercalés
- * pour donner l'illusion d'une vue satellite sans carte géo réelle.
- *
- * Continentaux : forêts tropicales, prairies, steppes arides, reliefs, déserts
- * Océaniques   : bleu profond, bleu côtier, bleu-vert littoral
+ * Palette satellite naturelle — mode light (terres uniquement).
+ * L'eau = globeMaterial color (#1a6fa8) visible sous les hexagones.
+ * Pas de bleu ici : les hex ne couvrent que les polygones pays.
  */
 const HEX_PALETTE_LIGHT = [
-  // — continentaux —
-  "#4a7c3f", // forêt tropicale (vert sombre)
-  "#7ab648", // prairie / savane (vert vif)
-  "#c8b560", // steppe / brousse (jaune-vert)
-  "#d4a44c", // désert sableux (beige doré)
-  "#b07840", // relief / montagne (marron moyen)
-  "#8c5e30", // relief aride (marron foncé)
-  "#e8d5a0", // désert clair / sable (beige pâle)
-  "#5a9e50", // forêt tempérée (vert moyen)
-  "#9ab870", // bocage / zone mixte (vert clair)
+  "#4a7c3f", // forêt tropicale
+  "#7ab648", // prairie / savane
+  "#c8b560", // steppe / brousse
+  "#d4a44c", // désert sableux
+  "#b07840", // relief / montagne
+  "#8c5e30", // relief aride
+  "#e8d5a0", // sable / désert clair
+  "#5a9e50", // forêt tempérée
+  "#9ab870", // bocage / zone mixte
   "#c4956a", // terres arides ocre
-  // — océaniques —
-  "#1a5fa8", // bleu océan profond
-  "#2980b9", // bleu côtier
-  "#5dade2", // bleu-vert littoral
 ];
 
-/**
- * Attribue une couleur de la palette en fonction de l'index du feature.
- * En light : on favorise les tons continentaux (indices 0-9) pour la majorité
- * des pays, et on réserve les tons océaniques (indices 10-12) aux features
- * dont l'index mod 13 tombe dans cette plage — ce qui crée naturellement
- * une minorité de cases bleues, comme les étendues d'eau/îles.
- */
 function stableHexColor(featureIndex: number, isDark: boolean): string {
-  if (isDark) {
-    return HEX_PALETTE_DARK[featureIndex % HEX_PALETTE_DARK.length];
-  }
-  // Palette satellite : 10 tons continent + 3 tons océan
-  // Le modulo 13 distribue ~23% de bleu, ~77% de continent
-  return HEX_PALETTE_LIGHT[featureIndex % HEX_PALETTE_LIGHT.length];
+  const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
+  return palette[featureIndex % palette.length];
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -132,43 +113,21 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-/**
- * Résout la position courante d'un colis pour les points/rings :
- * 1. flightPosition live/simulée si disponible
- * 2. position interpolée sur l'arc via progress si flightPosition.origin+destination dispo
- * 3. estimated_position en fallback
- */
 function resolveCurrentPosition(
   p: Parcel,
   flightPos: FlightPositionMap,
   isDark: boolean,
 ): { lat: number; lng: number } | null {
   const fp = flightPos[p.id];
-
   if (fp) {
-    // Live direct → coordonnées GPS réelles
-    if (fp.source === "live" && !fp.stale) {
-      return { lat: fp.lat, lng: fp.lng };
-    }
-
-    // Simulé ou stale → interpoler sur l'arc via progress
+    if (fp.source === "live" && !fp.stale) return { lat: fp.lat, lng: fp.lng };
     if (fp.origin && fp.destination && fp.progress != null) {
       const progress = Math.max(0.05, Math.min(0.95, fp.progress));
-      const [lat, lng] = slerpLatLng(
-        fp.origin.lat, fp.origin.lng,
-        fp.destination.lat, fp.destination.lng,
-        progress,
-      );
+      const [lat, lng] = slerpLatLng(fp.origin.lat, fp.origin.lng, fp.destination.lat, fp.destination.lng, progress);
       return { lat, lng };
     }
-
-    // Stale sans origin/dest : on utilise les coords du fp directement
-    if (fp.lat != null && fp.lng != null) {
-      return { lat: fp.lat, lng: fp.lng };
-    }
+    if (fp.lat != null && fp.lng != null) return { lat: fp.lat, lng: fp.lng };
   }
-
-  // Fallback → estimated_position du serializer
   return p.estimated_position ?? null;
 }
 
@@ -178,12 +137,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
   const points = parcels.map(p => {
     const pos = resolveCurrentPosition(p, flightPositions, isDark);
     if (!pos) return null;
-    return {
-      lat: pos.lat, lng: pos.lng,
-      label: p.tracking_number, status: p.status, description: p.description,
-      color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"),
-      altitude: 0.02, radius: 0.4,
-    };
+    return { lat: pos.lat, lng: pos.lng, label: p.tracking_number, status: p.status, description: p.description, color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"), altitude: 0.02, radius: 0.4 };
   }).filter(Boolean);
 
   const arcs = parcels
@@ -192,11 +146,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       const origin = getCentroid(p.origin_country);
       const dest = p.estimated_position;
       if (!origin || !dest) return null;
-      return {
-        startLat: origin[0], startLng: origin[1],
-        endLat: dest.lat, endLng: dest.lng,
-        color: SC[p.status] ?? "#ffffff", label: p.tracking_number,
-      };
+      return { startLat: origin[0], startLng: origin[1], endLat: dest.lat, endLng: dest.lng, color: SC[p.status] ?? "#ffffff", label: p.tracking_number };
     }).filter(Boolean);
 
   const rings = parcels
@@ -259,18 +209,20 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
 }
 
 function applyHexColors(globe: any, isDark: boolean) {
-  globe.hexPolygonColor((feat: any) => {
-    const idx: number = feat.__hexIdx ?? 0;
-    return stableHexColor(idx, isDark);
-  });
+  globe.hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0, isDark));
 }
 
+// Couleurs ocean (sphère nue) selon le thème
+const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
+const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
+
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
+  const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
   globe
-    .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
+    .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
     .globeMaterial(new THREE.MeshPhongMaterial({
-      color:    new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-      emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+      color:    new THREE.Color(ocean.color),
+      emissive: new THREE.Color(ocean.emissive),
       transparent: true, opacity: 0.95,
     }));
 
@@ -278,7 +230,7 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
     scene.traverse((obj: any) => {
       if (obj.isLine || obj.isLineSegments) {
         if (obj.material) obj.material = new THREE.LineBasicMaterial({
-          color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+          color: new THREE.Color(isDark ? "#993300" : "#0066bb"),
           transparent: true, opacity: 0.25,
         });
       }
@@ -294,8 +246,8 @@ function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
     const dir = new THREE.DirectionalLight(0xff9944, 0.8);
     dir.position.set(1, 1, 1); scene.add(dir);
   } else {
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dir = new THREE.DirectionalLight(0xd4eeff, 1.1);
     dir.position.set(1, 1, 1); scene.add(dir);
   }
 
@@ -341,12 +293,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
       newTransport.forEach((arc: any) => {
         const saved = prevState.get(arc.id);
-        if (saved) {
-          arc._curLat = saved.lat;
-          arc._curLng = saved.lng;
-          arc._curAlt = saved.alt;
-          arc._curHdg = saved.hdg;
-        }
+        if (saved) { arc._curLat = saved.lat; arc._curLng = saved.lng; arc._curAlt = saved.alt; arc._curHdg = saved.hdg; }
       });
       spritesRef.current = setupSprites(sceneRef.current, newTransport);
     }
@@ -374,6 +321,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
 
+      const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
+
       const globe = (GlobeGL as any)(
         { animateIn: true, rendererConfig: { antialias: true, alpha: true } }
       )(containerRef.current)
@@ -381,11 +330,11 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
         .showGraticules(true)
-        .atmosphereColor(isDark ? "#ff6600" : "#0066cc")
+        .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
         .atmosphereAltitude(0.12)
         .globeMaterial(new THREE.MeshPhongMaterial({
-          color: new THREE.Color(isDark ? "#0d0000" : "#dde8f0"),
-          emissive: new THREE.Color(isDark ? "#0a0000" : "#c8dcea"),
+          color:    new THREE.Color(ocean.color),
+          emissive: new THREE.Color(ocean.emissive),
           transparent: true, opacity: 0.95,
         }))
         .hexPolygonsData(countries.features)
@@ -403,8 +352,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         const dir = new THREE.DirectionalLight(0xff9944, 0.8);
         dir.position.set(1, 1, 1); scene.add(dir);
       } else {
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dir = new THREE.DirectionalLight(0xaaccff, 1.0);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const dir = new THREE.DirectionalLight(0xd4eeff, 1.1);
         dir.position.set(1, 1, 1); scene.add(dir);
       }
 
@@ -415,7 +364,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
             if (obj.material) obj.material = new THREE.LineBasicMaterial({
-              color: new THREE.Color(isDark ? "#993300" : "#0044aa"),
+              color: new THREE.Color(isDark ? "#993300" : "#0066bb"),
               transparent: true, opacity: 0.25,
             });
           }
@@ -428,8 +377,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const transport = buildData(pendingRef.current, isDark, flightPosRef.current).transport as any[];
       transport.forEach((arc: any) => {
         const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
-        arc._curLat = midLat;
-        arc._curLng = midLng;
+        arc._curLat = midLat; arc._curLng = midLng;
         arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
         arc._curHdg = 0;
       });
@@ -462,8 +410,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           if (livePos?.lat != null && livePos?.lng != null) {
             const rawProgress = livePos.progress;
             const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
-              ? Math.max(0.05, Math.min(0.95, rawProgress))
-              : 0.5;
+              ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
 
             if (mode === "live") {
               targetLat = livePos.lat; targetLng = livePos.lng;
@@ -485,10 +432,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
           if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
 
-          spriteStateRef.current.set(arc.id, {
-            lat: arc._curLat!, lng: arc._curLng!,
-            alt: arc._curAlt!, hdg: arc._curHdg!,
-          });
+          spriteStateRef.current.set(arc.id, { lat: arc._curLat!, lng: arc._curLng!, alt: arc._curAlt!, hdg: arc._curHdg! });
 
           const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
           sprite.position.set(coords.x, coords.y, coords.z);
@@ -515,7 +459,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     };
   }, [globeRef]);
 
-  const bgColor = theme === "dark" ? "#0a0000" : "#f0ede8";
+  const bgColor = theme === "dark" ? "#0a0000" : "#0d4f7a";
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
   );
