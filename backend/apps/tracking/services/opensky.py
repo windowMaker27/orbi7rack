@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 import httpx
 from django.conf import settings
@@ -6,95 +7,37 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-OPENSKY_BASE = "https://opensky-network.org/api"
-MIN_CRUISE_ALT = 1000   # metres — couvre montee/descente
-CACHE_TTL = 60          # secondes — evite de bruler le quota anonyme (400 req/jour)
+OPENSKY_BASE    = "https://opensky-network.org/api"
+OPENSKY_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/opensky-network"
+    "/protocol/openid-connect/token"
+)
+MIN_CRUISE_ALT = 1000   # metres
+CACHE_TTL      = 60     # secondes — position live
+TOKEN_CACHE_KEY = "opensky_oauth2_token"
+TOKEN_REFRESH_MARGIN = 30  # secondes avant expiry pour renouveler
 
-# Mapping IATA prefix → ICAO callsign prefix (complet)
+# Mapping IATA prefix → ICAO callsign prefix
 IATA_TO_ICAO_PREFIX = {
-    "SQ": "SIA",  # Singapore Airlines
-    "AF": "AFR",  # Air France
-    "BA": "BAW",  # British Airways
-    "LH": "DLH",  # Lufthansa
-    "KL": "KLM",  # KLM
-    "EK": "UAE",  # Emirates
-    "QR": "QTR",  # Qatar Airways
-    "CX": "CPA",  # Cathay Pacific
-    "JL": "JAL",  # Japan Airlines
-    "NH": "ANA",  # ANA
-    "TK": "THY",  # Turkish Airlines
-    "LX": "SWR",  # Swiss
-    "OS": "AUA",  # Austrian
-    "SK": "SAS",  # Scandinavian
-    "AY": "FIN",  # Finnair
-    "IB": "IBE",  # Iberia
-    "AZ": "ITY",  # ITA Airways
-    "UA": "UAL",  # United
-    "AA": "AAL",  # American
-    "DL": "DAL",  # Delta
-    "WN": "SWA",  # Southwest
-    "AC": "ACA",  # Air Canada
-    "QF": "QFA",  # Qantas
-    "EY": "ETD",  # Etihad
-    "MS": "MSR",  # EgyptAir
-    "ET": "ETH",  # Ethiopian
-    "RJ": "RJA",  # Royal Jordanian
-    "CI": "CAL",  # China Airlines
-    "BR": "EVA",  # EVA Air
-    "OZ": "AAR",  # Asiana
-    "KE": "KAL",  # Korean Air
-    "FX": "FDX",  # FedEx
-    "5X": "UPS",  # UPS Airlines
-    "DE": "CFG",  # Condor
-    "KZ": "KZR",  # Air Astana
-    "AI": "AIC",  # Air India
-    "6E": "IGO",  # IndiGo
-    "G8": "GOW",  # Go First
-    "UK": "VTI",  # Vistara
-    "EI": "EIN",  # Aer Lingus
-    "VY": "VLG",  # Vueling
-    "U2": "EZY",  # easyJet
-    "FR": "RYR",  # Ryanair
-    "W6": "WZZ",  # Wizz Air
-    "TP": "TAP",  # TAP Air Portugal
-    "SN": "BEL",  # Brussels Airlines
-    "LO": "LOT",  # LOT Polish
-    "OK": "CSA",  # Czech Airlines
-    "MH": "MAS",  # Malaysia Airlines
-    "GA": "GIA",  # Garuda Indonesia
-    "PR": "PAL",  # Philippine Airlines
-    "VN": "HVN",  # Vietnam Airlines
-    "TG": "THA",  # Thai Airways
-    "SV": "SVA",  # Saudia
-    "GF": "GFA",  # Gulf Air
-    "WY": "OMA",  # Oman Air
-    "PK": "PIA",  # Pakistan International
-    "UL": "ALK",  # SriLankan Airlines
-    "CM": "CMP",  # Copa Airlines
-    "AV": "AVA",  # Avianca
-    "LA": "LAN",  # LATAM
-    "JJ": "TAM",  # LATAM Brasil
-    "G3": "GLO",  # Gol
-    "AD": "AZU",  # Azul
-    "AR": "ARG",  # Aerolineas Argentinas
-    "AM": "AMX",  # Aeromexico
-    "SA": "SAA",  # South African Airways
-    "ET": "ETH",  # Ethiopian Airlines
-    "KQ": "KQA",  # Kenya Airways
-    "RO": "ROT",  # TAROM
-    "PS": "AUI",  # Ukraine International
-    "SU": "AFL",  # Aeroflot
-    "S7": "SBI",  # S7 Airlines
-    "UT": "UTA",  # UTair
-    "HY": "UZB",  # Uzbekistan Airways
-    "KC": "KZR",  # Air Astana (IATA alt)
-    "B2": "BRU",  # Belavia
+    "SQ": "SIA",  "AF": "AFR",  "BA": "BAW",  "LH": "DLH",  "KL": "KLM",
+    "EK": "UAE",  "QR": "QTR",  "CX": "CPA",  "JL": "JAL",  "NH": "ANA",
+    "TK": "THY",  "LX": "SWR",  "OS": "AUA",  "SK": "SAS",  "AY": "FIN",
+    "IB": "IBE",  "AZ": "ITY",  "UA": "UAL",  "AA": "AAL",  "DL": "DAL",
+    "WN": "SWA",  "AC": "ACA",  "QF": "QFA",  "EY": "ETD",  "MS": "MSR",
+    "ET": "ETH",  "RJ": "RJA",  "CI": "CAL",  "BR": "EVA",  "OZ": "AAR",
+    "KE": "KAL",  "FX": "FDX",  "5X": "UPS",  "DE": "CFG",  "KZ": "KZR",
+    "AI": "AIC",  "6E": "IGO",  "UK": "VTI",  "EI": "EIN",  "VY": "VLG",
+    "U2": "EZY",  "FR": "RYR",  "W6": "WZZ",  "TP": "TAP",  "SN": "BEL",
+    "LO": "LOT",  "OK": "CSA",  "MH": "MAS",  "GA": "GIA",  "PR": "PAL",
+    "VN": "HVN",  "TG": "THA",  "SV": "SVA",  "GF": "GFA",  "WY": "OMA",
+    "PK": "PIA",  "UL": "ALK",  "CM": "CMP",  "AV": "AVA",  "LA": "LAN",
+    "G3": "GLO",  "AD": "AZU",  "AR": "ARG",  "AM": "AMX",  "SA": "SAA",
+    "KQ": "KQA",  "RO": "ROT",  "SU": "AFL",  "S7": "SBI",  "HY": "UZB",
 }
 
 
 def _iata_to_icao_callsign(flight_number: str) -> Optional[str]:
     fn = flight_number.upper().replace(" ", "")
-    # Essaie préfixe 2 chars puis 1 char
     for n in (2, 1):
         prefix = fn[:n]
         icao = IATA_TO_ICAO_PREFIX.get(prefix)
@@ -103,18 +46,57 @@ def _iata_to_icao_callsign(flight_number: str) -> Optional[str]:
     return None
 
 
-def _auth() -> Optional[httpx.BasicAuth]:
-    user = getattr(settings, "OPENSKY_USER", "") or ""
-    pwd  = getattr(settings, "OPENSKY_PASS", "") or ""
-    if user and pwd:
-        logger.debug(f"[OpenSky] Auth activee pour l'utilisateur: {user!r}")
-        return httpx.BasicAuth(user, pwd)
-    logger.warning("[OpenSky] Aucune auth configuree — quota anonyme (400 req/jour partages)")
-    return None
+def _get_oauth2_token() -> Optional[str]:
+    """
+    Récupère un Bearer token OAuth2 OpenSky via client_credentials.
+    Utilise le cache Django pour éviter de refaire le flow à chaque appel.
+    Credentials : OPENSKY_USER (client_id) + OPENSKY_PASS (client_secret).
+    """
+    cached = cache.get(TOKEN_CACHE_KEY)
+    if cached:
+        logger.debug("[OpenSky] Token OAuth2 depuis cache")
+        return cached
+
+    client_id     = getattr(settings, "OPENSKY_USER", "") or ""
+    client_secret = getattr(settings, "OPENSKY_PASS", "") or ""
+
+    if not client_id or not client_secret:
+        logger.warning("[OpenSky] OPENSKY_USER/OPENSKY_PASS absents — mode anonyme")
+        return None
+
+    try:
+        resp = httpx.post(
+            OPENSKY_TOKEN_URL,
+            data={
+                "grant_type":    "client_credentials",
+                "client_id":     client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data       = resp.json()
+        token      = data["access_token"]
+        expires_in = int(data.get("expires_in", 1800))
+        ttl        = max(expires_in - TOKEN_REFRESH_MARGIN, 60)
+        cache.set(TOKEN_CACHE_KEY, token, ttl)
+        logger.info(f"[OpenSky] Token OAuth2 obtenu, expire dans {expires_in}s")
+        return token
+    except Exception as e:
+        logger.warning(f"[OpenSky] Impossible d'obtenir le token OAuth2: {e}")
+        return None
 
 
-def _query_opensky(callsign: str, auth: Optional[httpx.BasicAuth]) -> Optional[dict]:
-    """Tente un appel OpenSky pour un callsign donné. Retourne le dict position ou None."""
+def _auth_headers() -> dict:
+    """Retourne les headers d'auth (Bearer si dispo, sinon vide = anonyme)."""
+    token = _get_oauth2_token()
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+
+def _query_opensky(callsign: str) -> Optional[dict]:
+    """Tente un appel OpenSky pour un callsign donné."""
     target = callsign.upper().strip()
     padded = target.ljust(8)
 
@@ -122,14 +104,20 @@ def _query_opensky(callsign: str, auth: Optional[httpx.BasicAuth]) -> Optional[d
         resp = httpx.get(
             f"{OPENSKY_BASE}/states/all",
             params={"callsign": padded},
-            auth=auth,
+            headers=_auth_headers(),
             timeout=10.0,
         )
+
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("X-Rate-Limit-Retry-After-Seconds", "?")
+            logger.warning(f"[OpenSky] 429 Rate limit — retry after {retry_after}s")
+            return None
+
         resp.raise_for_status()
         states = (resp.json() or {}).get("states") or []
 
         if not states:
-            logger.info(f"[OpenSky] Aucun etat pour callsign={target!r}")
+            logger.info(f"[OpenSky] Aucun état pour callsign={target!r}")
             return None
 
         logger.debug(
@@ -174,10 +162,10 @@ def _query_opensky(callsign: str, auth: Optional[httpx.BasicAuth]) -> Optional[d
 
 def get_flight_live_position(flight_number: str) -> Optional[dict]:
     """
-    Cherche la position live sur OpenSky en tentant :
-      1. Le callsign IATA tel quel  (ex: DL267)
-      2. Le callsign ICAO converti  (ex: DAL267)
-    Met en cache 60s pour préserver le quota anonyme.
+    Cherche la position live sur OpenSky :
+      1. Callsign IATA  (ex: DL267)
+      2. Callsign ICAO  (ex: DAL267)
+    Cache 60s. Auth OAuth2 si credentials dispo.
     """
     iata = flight_number.upper().strip()
     icao = _iata_to_icao_callsign(iata)
@@ -188,15 +176,11 @@ def get_flight_live_position(flight_number: str) -> Optional[dict]:
         logger.debug(f"[OpenSky] Cache hit pour {iata!r}")
         return cached if cached is not False else None
 
-    auth = _auth()
+    result = _query_opensky(iata)
 
-    # Tentative 1 : callsign IATA
-    result = _query_opensky(iata, auth)
-
-    # Tentative 2 : callsign ICAO si différent
     if result is None and icao and icao != iata:
         logger.debug(f"[OpenSky] Retry avec callsign ICAO: {icao!r}")
-        result = _query_opensky(icao, auth)
+        result = _query_opensky(icao)
 
     cache.set(cache_key, result if result is not None else False, CACHE_TTL)
     return result
