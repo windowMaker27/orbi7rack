@@ -52,11 +52,47 @@ const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
 const HEX_PALETTE_DARK  = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-const HEX_PALETTE_LIGHT = ["#0044aa","#0066cc","#1177dd","#2255bb","#3388ee","#0055bb","#1166cc","#0077dd"];
 
+/**
+ * Palette satellite naturelle — mode light
+ * 5 tons continentaux + 3 tons océaniques intercalés
+ * pour donner l'illusion d'une vue satellite sans carte géo réelle.
+ *
+ * Continentaux : forêts tropicales, prairies, steppes arides, reliefs, déserts
+ * Océaniques   : bleu profond, bleu côtier, bleu-vert littoral
+ */
+const HEX_PALETTE_LIGHT = [
+  // — continentaux —
+  "#4a7c3f", // forêt tropicale (vert sombre)
+  "#7ab648", // prairie / savane (vert vif)
+  "#c8b560", // steppe / brousse (jaune-vert)
+  "#d4a44c", // désert sableux (beige doré)
+  "#b07840", // relief / montagne (marron moyen)
+  "#8c5e30", // relief aride (marron foncé)
+  "#e8d5a0", // désert clair / sable (beige pâle)
+  "#5a9e50", // forêt tempérée (vert moyen)
+  "#9ab870", // bocage / zone mixte (vert clair)
+  "#c4956a", // terres arides ocre
+  // — océaniques —
+  "#1a5fa8", // bleu océan profond
+  "#2980b9", // bleu côtier
+  "#5dade2", // bleu-vert littoral
+];
+
+/**
+ * Attribue une couleur de la palette en fonction de l'index du feature.
+ * En light : on favorise les tons continentaux (indices 0-9) pour la majorité
+ * des pays, et on réserve les tons océaniques (indices 10-12) aux features
+ * dont l'index mod 13 tombe dans cette plage — ce qui crée naturellement
+ * une minorité de cases bleues, comme les étendues d'eau/îles.
+ */
 function stableHexColor(featureIndex: number, isDark: boolean): string {
-  const palette = isDark ? HEX_PALETTE_DARK : HEX_PALETTE_LIGHT;
-  return palette[featureIndex % palette.length];
+  if (isDark) {
+    return HEX_PALETTE_DARK[featureIndex % HEX_PALETTE_DARK.length];
+  }
+  // Palette satellite : 10 tons continent + 3 tons océan
+  // Le modulo 13 distribue ~23% de bleu, ~77% de continent
+  return HEX_PALETTE_LIGHT[featureIndex % HEX_PALETTE_LIGHT.length];
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -154,7 +190,6 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
       const origin = getCentroid(p.origin_country);
-      // Destination de l'arc = always estimated_position (centroid pays dest)
       const dest = p.estimated_position;
       if (!origin || !dest) return null;
       return {
@@ -298,7 +333,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     pendingRef.current = parcels;
     if (!globeRef.current) return;
     const isDark = theme === "dark";
-    // Passe flightPositions pour que points/rings soient à la bonne position
     applyData(globeRef.current, parcels, isDark, flightPositions);
     if (sceneRef.current) {
       applyTheme(globeRef.current, sceneRef.current, isDark);
