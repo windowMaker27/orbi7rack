@@ -6,16 +6,9 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-OPENSKY_BASE      = "https://opensky-network.org/api"
-OPENSKY_TOKEN_URL = (
-    "https://auth.opensky-network.org/auth/realms/opensky-network"
-    "/protocol/openid-connect/token"
-)
-OPENSKY_CLIENT_ID = "opensky-api"   # client_id public OpenSky
-MIN_CRUISE_ALT    = 1000            # metres
-CACHE_TTL         = 60              # secondes — position live
-TOKEN_CACHE_KEY   = "opensky_oauth2_token"
-TOKEN_REFRESH_MARGIN = 30
+OPENSKY_BASE   = "https://opensky-network.org/api"
+MIN_CRUISE_ALT = 1000  # metres
+CACHE_TTL      = 60    # secondes
 
 IATA_TO_ICAO_PREFIX = {
     "SQ": "SIA",  "AF": "AFR",  "BA": "BAW",  "LH": "DLH",  "KL": "KLM",
@@ -45,67 +38,32 @@ def _iata_to_icao_callsign(flight_number: str) -> Optional[str]:
     return None
 
 
-def _get_oauth2_token() -> Optional[str]:
-    """
-    Token OAuth2 via Resource Owner Password Credentials (ROPC).
-    OpenSky utilise username/password + client_id public 'opensky-api'.
-    """
-    cached = cache.get(TOKEN_CACHE_KEY)
-    if cached:
-        logger.debug("[OpenSky] Token OAuth2 depuis cache")
-        return cached
-
+def _auth() -> Optional[tuple]:
+    """Retourne (username, password) si dispo, sinon None (mode anonyme)."""
     username = getattr(settings, "OPENSKY_USER", "") or ""
     password = getattr(settings, "OPENSKY_PASS", "") or ""
-
-    if not username or not password:
-        logger.warning("[OpenSky] OPENSKY_USER/OPENSKY_PASS absents — mode anonyme")
-        return None
-
-    try:
-        resp = httpx.post(
-            OPENSKY_TOKEN_URL,
-            data={
-                "grant_type": "password",
-                "client_id":  OPENSKY_CLIENT_ID,
-                "username":   username,
-                "password":   password,
-            },
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        data       = resp.json()
-        token      = data["access_token"]
-        expires_in = int(data.get("expires_in", 1800))
-        ttl        = max(expires_in - TOKEN_REFRESH_MARGIN, 60)
-        cache.set(TOKEN_CACHE_KEY, token, ttl)
-        logger.info(f"[OpenSky] Token OAuth2 obtenu (expires_in={expires_in}s)")
-        return token
-    except Exception as e:
-        logger.warning(f"[OpenSky] Impossible d'obtenir le token OAuth2: {e}")
-        return None
-
-
-def _auth_headers() -> dict:
-    token = _get_oauth2_token()
-    return {"Authorization": f"Bearer {token}"} if token else {}
+    if username and password:
+        return (username, password)
+    logger.warning("[OpenSky] Credentials absents — mode anonyme (quota réduit)")
+    return None
 
 
 def _query_opensky(callsign: str) -> Optional[dict]:
     target = callsign.upper().strip()
     padded = target.ljust(8)
+    auth   = _auth()
 
     try:
         resp = httpx.get(
             f"{OPENSKY_BASE}/states/all",
             params={"callsign": padded},
-            headers=_auth_headers(),
+            auth=auth,
             timeout=10.0,
         )
 
         if resp.status_code == 429:
-            retry_after = resp.headers.get("X-Rate-Limit-Retry-After-Seconds", "?")
-            logger.warning(f"[OpenSky] 429 Rate limit — retry after {retry_after}s")
+            retry = resp.headers.get("X-Rate-Limit-Retry-After-Seconds", "?")
+            logger.warning(f"[OpenSky] 429 Rate limit — retry after {retry}s")
             return None
 
         resp.raise_for_status()
@@ -121,10 +79,10 @@ def _query_opensky(callsign: str) -> Optional[dict]:
         )
 
         for s in states:
-            raw      = (s[1] or "").strip().upper()
-            lat      = s[6]
-            lng      = s[5]
-            alt      = s[13] if s[13] is not None else s[7]
+            raw       = (s[1] or "").strip().upper()
+            lat       = s[6]
+            lng       = s[5]
+            alt       = s[13] if s[13] is not None else s[7]
             on_ground = s[8]
 
             if target not in raw:
@@ -148,7 +106,7 @@ def _query_opensky(callsign: str) -> Optional[dict]:
         return None
 
     except Exception as e:
-        logger.warning(f"[OpenSky] Erreur pour {callsign}: {e}")
+        logger.warning(f"[OpenSky] Erreur pour {callsign!r}: {e}")
         return None
 
 
