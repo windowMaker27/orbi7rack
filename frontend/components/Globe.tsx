@@ -51,10 +51,9 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-// Valeurs bloom/lighting — source unique de vérité
 const BLOOM = {
-  dark:  { intensity: 1.6, threshold: 0.3,  smoothing: 0.4 },
-  light: { intensity: 0.5, threshold: 0.5,  smoothing: 0.4 },
+  dark:  { intensity: 1.6, threshold: 0.3, smoothing: 0.4 },
+  light: { intensity: 0.5, threshold: 0.5, smoothing: 0.4 },
 };
 const AMBIENT = {
   dark:  { intensity: 1.0 },
@@ -226,17 +225,14 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
 }
 
-function applyHexColors(globe: any, isDark: boolean) {
-  globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
-}
-
-const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
-const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
-
-function applyLighting(scene: THREE.Scene, isDark: boolean) {
+function purgeLights(scene: THREE.Scene) {
   const toRemove: THREE.Object3D[] = [];
   scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
   toRemove.forEach(l => scene.remove(l));
+}
+
+function applyLighting(scene: THREE.Scene, isDark: boolean) {
+  purgeLights(scene);
   const amb = isDark ? AMBIENT.dark : AMBIENT.light;
   const dir = isDark ? DIRLIGHT.dark : DIRLIGHT.light;
   scene.add(new THREE.AmbientLight(0xffffff, amb.intensity));
@@ -244,6 +240,13 @@ function applyLighting(scene: THREE.Scene, isDark: boolean) {
   dirLight.position.set(1, 1, 1);
   scene.add(dirLight);
 }
+
+function applyHexColors(globe: any, isDark: boolean) {
+  globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
+}
+
+const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
+const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
 
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
   const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
@@ -355,6 +358,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
+
+      // ① Purger TOUTES les lumières injectées par globe.gl avant d'appliquer les nôtres
       applyLighting(scene, isDark);
 
       globe.controls().autoRotate = true;
@@ -395,6 +400,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         mipmapBlur: true,
       })));
       composerRef.current = composer;
+
+      // ② Pre-warm : génère les mipmaps du bloom avant le premier frame visible
+      for (let i = 0; i < 5; i++) composer.render();
 
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
