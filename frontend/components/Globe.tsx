@@ -66,6 +66,30 @@ const DIRLIGHT = {
 
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
+// Sources GeoJSON fiables avec fallback
+const GEOJSON_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json",
+  "https://unpkg.com/world-atlas@2.0.2/countries-110m.json",
+];
+
+async function fetchCountries(): Promise<any> {
+  // world-atlas fournit un TopoJSON — on le convertit en GeoJSON via topojson-client
+  const { default: topojson } = await import("topojson-client" as any);
+  for (const url of GEOJSON_SOURCES) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const topo = await res.json();
+      // countries-110m contient l'objet "countries"
+      const geojson = topojson.feature(topo, topo.objects.countries) as any;
+      return geojson;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("Impossible de charger les données pays");
+}
+
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
   if (a < 15)  return "#4a7c3f";
@@ -324,7 +348,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const isDark = themeRef.current === "dark";
       const [{ default: GlobeGL }, countries] = await Promise.all([
         import("globe.gl"),
-        fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
+        fetchCountries(),
       ]);
 
       countries.features.forEach((f: any, i: number) => {
@@ -336,8 +360,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const b = isDark ? BLOOM.dark : BLOOM.light;
 
       const globe = (GlobeGL as any)(
-        // animateIn: false — évite que globe.gl écrase le globeMaterial/opacity
-        // pendant son animation d'entrée (cause du "flash parfait puis perte")
         { animateIn: false, rendererConfig: { antialias: true, alpha: true } }
       )(containerRef.current)
         .width(containerRef.current!.clientWidth)
@@ -361,7 +383,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
-      // Purge immédiate + re-purge à 200ms (globe.gl peut injecter ses lumières en différé)
       applyLighting(scene, isDark);
       setTimeout(() => applyLighting(scene, isDark), 200);
 
