@@ -15,13 +15,22 @@ interface GlobeProps {
   theme?: Theme;
 }
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS_DARK: Record<string, string> = {
   pending: "#ffaa00",
   in_transit: "#00cfff",
   out_for_delivery: "#00ff99",
   delivered: "#44ff44",
   exception: "#ff2222",
   expired: "#888888",
+};
+
+const STATUS_COLORS_LIGHT: Record<string, string> = {
+  pending: "#e67e00",
+  in_transit: "#0077cc",
+  out_for_delivery: "#00994d",
+  delivered: "#228b22",
+  exception: "#cc0000",
+  expired: "#666666",
 };
 
 const ISO2_CENTROIDS: Record<string, [number, number]> = {
@@ -63,13 +72,11 @@ const DIRLIGHT = {
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
 
 async function fetchCountries(): Promise<any> {
-  // 1. Route locale Next.js (proxy serveur, pas de CORS)
   try {
     const res = await fetch("/api/countries");
     if (res.ok) return await res.json();
   } catch { /* fallback */ }
 
-  // 2. Fallback direct (si api route indisponible)
   const fallbacks = [
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
     "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json",
@@ -79,7 +86,6 @@ async function fetchCountries(): Promise<any> {
       const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
-      // Si c'est du TopoJSON (world-atlas), convertir
       if (data.type === "Topology") {
         const { feature } = await import("topojson-client");
         return feature(data, data.objects.countries);
@@ -222,6 +228,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
 }
 
 function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
+  const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const { points, arcs, rings } = buildData(parcels, isDark, flightPositions);
   globe
     .pointsData(points)
@@ -247,6 +254,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringLat((d: any) => d.lat).ringLng((d: any) => d.lng)
     .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "00")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
+  void SC; // used via buildData above
 }
 
 function purgeLights(scene: THREE.Scene) {
