@@ -76,14 +76,14 @@ const LERP_HDG     = 0.06;
 // threshold : luminosité min pour déclencher (0.1 = tout luit)
 // ============================================================
 const BLOOM = {
-  dark:  { intensity: 1.6, threshold: 0.3, smoothing: 0.4 },
+  dark:  { intensity: 3.0, threshold: 0.3, smoothing: 0.1 },
   light: { intensity: 0.5, threshold: 0.5, smoothing: 0.4 },
 };
 // Variante "cyberglitch" — décommentez :
-// const BLOOM = {
-//   dark:  { intensity: 3.0, threshold: 0.1, smoothing: 0.2 },
-//   light: { intensity: 1.2, threshold: 0.3, smoothing: 0.3 },
-// };
+//const BLOOM = {
+//  dark:  { intensity: 3.0, threshold: 0.1, smoothing: 0.2 },
+//  light: { intensity: 1.2, threshold: 0.3, smoothing: 0.3 },
+//};
 // Variante bloom OFF :
 // const BLOOM = {
 //   dark:  { intensity: 0.0, threshold: 1.0, smoothing: 0.4 },
@@ -105,15 +105,15 @@ const DIRLIGHT = {
   light: { color: 0xd4eeff, intensity: 1.1 },   // lumière froide du jour
 };
 // Variante lumière bleue froide :
-// const DIRLIGHT = {
-//   dark:  { color: 0x4488ff, intensity: 1.2 },
-//   light: { color: 0xffffff, intensity: 1.5 },
-// };
+//const DIRLIGHT = {
+//  dark:  { color: 0x4488ff, intensity: 1.2 },
+//  light: { color: 0xffffff, intensity: 1.5 },
+//};
 // Variante lumière verte (hacker) :
-// const DIRLIGHT = {
-//   dark:  { color: 0x00ff88, intensity: 1.0 },
-//   light: { color: 0x88ff44, intensity: 0.9 },
-// };
+//const DIRLIGHT = {
+//  dark:  { color: 0x00ff88, intensity: 1.0 },
+//  light: { color: 0x88ff44, intensity: 0.9 },
+//};
 
 // ============================================================
 // 🎨 DEMO 4 — PALETTE DES HEXAGONES (continents)
@@ -124,7 +124,7 @@ const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff
 // Variante "néon violet" :
 // const HEX_PALETTE_DARK = ["#9b59b6","#8e44ad","#6c3483","#a569bd","#7d3c98","#5b2c6f","#c39bd3","#d2b4de"];
 // Variante "matrix vert" :
-// const HEX_PALETTE_DARK = ["#003300","#006600","#009900","#00cc00","#00ff00","#33ff33","#66ff66","#004400"];
+//const HEX_PALETTE_DARK = ["#003300","#006600","#009900","#00cc00","#00ff00","#33ff33","#66ff66","#004400"];
 // Variante monochrome froid :
 // const HEX_PALETTE_DARK = ["#1a2a3a","#1e3448","#223e56","#264864","#2a5272","#2e5c80","#32668e","#36709c"];
 
