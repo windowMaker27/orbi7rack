@@ -15,6 +15,9 @@ import type { PositionMode } from "@/hooks/useFlightPositions";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
+/** Durée de l'animation POV en ms */
+const POV_DURATION = 1200;
+
 /** Slerp sphérique identique à celui de Globe.tsx */
 function slerpLatLng(
   lat1: number, lng1: number,
@@ -49,12 +52,10 @@ function resolveCameraTarget(
 ): { lat: number; lng: number } | null {
   if (!live) return parcel.estimated_position ?? null;
 
-  // Live réel → position GPS directe
   if (live.source === "live" && !live.stale && live.lat != null && live.lng != null) {
     return { lat: live.lat, lng: live.lng };
   }
 
-  // Simulé ou stale → interpoler sur l'arc
   if (live.origin && live.destination && live.progress != null) {
     const progress = Math.max(0.05, Math.min(0.95, live.progress));
     const [lat, lng] = slerpLatLng(
@@ -65,7 +66,6 @@ function resolveCameraTarget(
     return { lat, lng };
   }
 
-  // Stale sans arc → coords du fp directement
   if (live.lat != null && live.lng != null) {
     return { lat: live.lat, lng: live.lng };
   }
@@ -89,7 +89,6 @@ function GlobeWithData() {
     const pos  = resolveCameraTarget(parcel, live);
 
     if (pos && globeRef.current) {
-      // Suspend le bloom pendant l'animation POV pour éviter le tremblement
       globeRef.current.setPOVAnimating?.(true);
       globeRef.current.pointOfView({ lat: pos.lat, lng: pos.lng, altitude: 1.5 }, POV_DURATION);
       globeRef.current.controls().autoRotate = false;
