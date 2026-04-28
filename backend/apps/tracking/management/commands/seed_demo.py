@@ -141,7 +141,7 @@ def lookup_flight_api(flight_number: str) -> dict | None:
 
 
 class Command(BaseCommand):
-    help = "Crée des colis démo liés à des vols (args CLI ou lookup AviationStack)"
+    help = "Crée des colis démo avec différents statuts (camion FR, pending, livraison, livré)"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -155,7 +155,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--reset", action="store_true",
-            help="Supprime les colis DEMO-LIVE-* existants avant de recréer",
+            help="Supprime les colis DEMO-* existants avant de recréer",
         )
 
     def _resolve_flight(self, token: str) -> dict | None:
@@ -163,7 +163,6 @@ class Command(BaseCommand):
         flight_number = parts[0].upper()
 
         if len(parts) == 3:
-            # Bypass direct — la route est explicitement fournie, pas d'appel API
             return {
                 "flight_number": flight_number,
                 "origin_iata":   parts[1].upper(),
@@ -191,6 +190,7 @@ class Command(BaseCommand):
         return None
 
     def _create_parcel(self, owner, flight: dict, now) -> None:
+        """Crée un colis in_transit lié à un vol (comportement original)."""
         fn   = flight["flight_number"]
         orig = iata_meta(flight["origin_iata"])
         dest = iata_meta(flight["dest_iata"])
@@ -242,16 +242,230 @@ class Command(BaseCommand):
             f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events)} events)"
         ))
 
-    # Vols longue distance — haute probabilité d'être en l'air
-    # Format : flight_number, origin_iata, dest_iata, airline
-    # Toujours utiliser le format bypass ici pour garantir la route souhaitée
-    HARDCODED = [
-        {"flight_number": "AF011",  "origin_iata": "CDG", "dest_iata": "JFK", "airline": "Air France"},
-        {"flight_number": "EK075",  "origin_iata": "DXB", "dest_iata": "LAX", "airline": "Emirates"},
-        {"flight_number": "QR007",  "origin_iata": "DOH", "dest_iata": "JFK", "airline": "Qatar Airways"},
-        {"flight_number": "SQ321",  "origin_iata": "SIN", "dest_iata": "LHR", "airline": "Singapore Airlines"},
-        {"flight_number": "AI127",  "origin_iata": "VIE", "dest_iata": "ORD", "airline": "Air India"},
-    ]
+    def _create_static_parcel(
+        self,
+        owner,
+        tracking_number: str,
+        carrier: str,
+        description: str,
+        origin_country: str,
+        dest_country: str,
+        status: str,
+        events_data: list[dict],
+        now,
+    ) -> None:
+        """Crée un colis statique (pas de vol live) avec ses événements."""
+        Parcel.objects.filter(tracking_number=tracking_number).delete()
+        parcel = Parcel.objects.create(
+            owner=owner,
+            tracking_number=tracking_number,
+            carrier=carrier,
+            description=description,
+            origin_country=origin_country,
+            dest_country=dest_country,
+            status=status,
+            last_synced_at=now,
+        )
+        events = [
+            TrackingEvent(
+                parcel=parcel,
+                timestamp=e["timestamp"],
+                location=e["location"],
+                latitude=e.get("lat"),
+                longitude=e.get("lng"),
+                status=e["status"],
+                description=e["description"],
+            )
+            for e in events_data
+        ]
+        TrackingEvent.objects.bulk_create(events)
+        self.stdout.write(self.style.SUCCESS(
+            f"✅ {tracking_number} [{status}] — {description} ({len(events)} events)"
+        ))
+
+    def _seed_hardcoded(self, owner, now) -> None:
+        """
+        4 scénarios de démo fixés — toujours les mêmes pour une présentation reproductible.
+
+        1. DEMO-TRUCK-FR   : out_for_delivery — camion en route sur Paris
+        2. DEMO-PENDING-CN : pending — colis bloqué dans un centre de tri à Shanghai
+        3. DEMO-OFD-JP     : out_for_delivery — livraison express Tokyo
+        4. DEMO-DELIVERED  : delivered — colis livré à New York
+        """
+
+        # ------------------------------------------------------------
+        # 1. Camion en livraison — Paris, France
+        # Position courante : quelque part entre Roissy et le centre de Paris
+        # (autoroute A1, hauteur Villepinte)
+        # ------------------------------------------------------------
+        self._create_static_parcel(
+            owner=owner,
+            tracking_number="DEMO-TRUCK-FR",
+            carrier="Chronopost",
+            description="Composants électroniques — livraison du jour à Paris",
+            origin_country="CN",
+            dest_country="FR",
+            status="out_for_delivery",
+            events_data=[
+                {
+                    "timestamp": now - timezone.timedelta(days=5),
+                    "location": "Shanghai Pudong — entrepôt expéditeur",
+                    "lat": 31.1443, "lng": 121.8083,
+                    "status": "in_transit",
+                    "description": "Colis pris en charge par DHL Express Shanghai",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(days=4),
+                    "location": "Paris CDG — plateforme aérienne",
+                    "lat": 49.0097, "lng": 2.5479,
+                    "status": "in_transit",
+                    "description": "Arrivée en France, passage en douane validé",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(hours=14),
+                    "location": "Chronopost Roissy — hub régional",
+                    "lat": 49.0097, "lng": 2.5479,
+                    "status": "out_for_delivery",
+                    "description": "Colis trié et assigné au livreur",
+                },
+                {
+                    # Position actuelle : A1 hauteur Villepinte — en route vers Paris
+                    "timestamp": now - timezone.timedelta(hours=1, minutes=20),
+                    "location": "Villepinte (93) — en route",
+                    "lat": 48.9667, "lng": 2.5333,
+                    "status": "out_for_delivery",
+                    "description": "Camion en route — livraison prévue avant 13h",
+                },
+            ],
+            now=now,
+        )
+
+        # ------------------------------------------------------------
+        # 2. Pending — bloqué dans un centre de tri, Shanghai
+        # ------------------------------------------------------------
+        self._create_static_parcel(
+            owner=owner,
+            tracking_number="DEMO-PENDING-CN",
+            carrier="China Post EMS",
+            description="Textile — en attente de libération douanière",
+            origin_country="CN",
+            dest_country="FR",
+            status="pending",
+            events_data=[
+                {
+                    "timestamp": now - timezone.timedelta(days=3),
+                    "location": "Guangzhou — entrepôt vendeur",
+                    "lat": 23.3924, "lng": 113.2988,
+                    "status": "pending",
+                    "description": "Commande validée, préparation en cours",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(days=2),
+                    "location": "Centre de tri Shanghai — Pudong",
+                    "lat": 31.1443, "lng": 121.8083,
+                    "status": "pending",
+                    "description": "Colis reu au centre de tri, en attente de contrôle export",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(hours=6),
+                    "location": "Centre de tri Shanghai — Pudong",
+                    "lat": 31.1443, "lng": 121.8083,
+                    "status": "pending",
+                    "description": "Inspection douanière requise — délai estimé 24-48h",
+                },
+            ],
+            now=now,
+        )
+
+        # ------------------------------------------------------------
+        # 3. Out for delivery — livraison express Tokyo, Japon
+        # ------------------------------------------------------------
+        self._create_static_parcel(
+            owner=owner,
+            tracking_number="DEMO-OFD-JP",
+            carrier="Yamato Transport",
+            description="Montre de luxe — livraison express 2h Tokyo",
+            origin_country="FR",
+            dest_country="JP",
+            status="out_for_delivery",
+            events_data=[
+                {
+                    "timestamp": now - timezone.timedelta(days=2),
+                    "location": "Paris CDG — aéroport",
+                    "lat": 49.0097, "lng": 2.5479,
+                    "status": "in_transit",
+                    "description": "Expédié depuis Paris sur vol cargo Air France",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(hours=10),
+                    "location": "Tokyo Narita — fret aérien",
+                    "lat": 35.7647, "lng": 140.3864,
+                    "status": "in_transit",
+                    "description": "Arrivée au Japon, dédouanement terminé",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(hours=3),
+                    "location": "Yamato — dépôt Shinjuku",
+                    "lat": 35.6938, "lng": 139.7034,
+                    "status": "out_for_delivery",
+                    "description": "En cours de livraison — livreur en route",
+                },
+                {
+                    # Position actuelle : Shinjuku, Tokyo
+                    "timestamp": now - timezone.timedelta(minutes=30),
+                    "location": "Shinjuku, Tokyo",
+                    "lat": 35.6895, "lng": 139.6917,
+                    "status": "out_for_delivery",
+                    "description": "Livreur à proximité — tentative de livraison imminente",
+                },
+            ],
+            now=now,
+        )
+
+        # ------------------------------------------------------------
+        # 4. Delivered — livré à New York
+        # ------------------------------------------------------------
+        self._create_static_parcel(
+            owner=owner,
+            tracking_number="DEMO-DELIVERED-US",
+            carrier="FedEx",
+            description="Matériel photo — livré à Manhattan",
+            origin_country="DE",
+            dest_country="US",
+            status="delivered",
+            events_data=[
+                {
+                    "timestamp": now - timezone.timedelta(days=4),
+                    "location": "Frankfurt — hub FedEx Europe",
+                    "lat": 50.0379, "lng": 8.5622,
+                    "status": "in_transit",
+                    "description": "Départ depuis Frankfurt sur vol fret FedEx",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(days=3),
+                    "location": "New York JFK — hub FedEx",
+                    "lat": 40.6413, "lng": -73.7781,
+                    "status": "in_transit",
+                    "description": "Arrivée aux États-Unis, dédouanement validé",
+                },
+                {
+                    "timestamp": now - timezone.timedelta(days=2, hours=4),
+                    "location": "FedEx — Manhattan distribution center",
+                    "lat": 40.7580, "lng": -73.9855,
+                    "status": "out_for_delivery",
+                    "description": "Colis en cours de livraison",
+                },
+                {
+                    # Lieu de livraison final : Midtown Manhattan
+                    "timestamp": now - timezone.timedelta(days=2, hours=1),
+                    "location": "Midtown Manhattan, New York",
+                    "lat": 40.7549, "lng": -73.9840,
+                    "status": "delivered",
+                    "description": "Colis remis au destinataire. Signé: J. Morrison",
+                },
+            ],
+            now=now,
+        )
 
     def handle(self, *args, **options):
         User = get_user_model()
@@ -272,22 +486,20 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING("[INFO] Superuser admin/admin créé."))
 
         if options["reset"]:
-            deleted, _ = Parcel.objects.filter(tracking_number__startswith="DEMO-LIVE-").delete()
+            deleted, _ = Parcel.objects.filter(tracking_number__startswith="DEMO-").delete()
             if deleted:
-                self.stdout.write(self.style.WARNING(f"Supprimé : {deleted} colis DEMO-LIVE-*"))
+                self.stdout.write(self.style.WARNING(f"Supprimé : {deleted} colis DEMO-*"))
 
         tokens = options["flights"]
         now = timezone.now()
 
         if not tokens:
-            self.stdout.write("[INFO] Aucun token fourni — utilisation des colis hardcodés.")
-            flights = self.HARDCODED
+            self.stdout.write("[INFO] Aucun token fourni — création des 4 scénarios démo.")
+            self._seed_hardcoded(owner, now)
         else:
             flights = [f for t in tokens if (f := self._resolve_flight(t)) is not None]
-
-        for flight in flights:
-            self._create_parcel(owner, flight, now)
-
-        self.stdout.write(self.style.SUCCESS(
-            f"\nTerminé — {len(flights)} colis créé(s). Owner: {owner.username}"
-        ))
+            for flight in flights:
+                self._create_parcel(owner, flight, now)
+            self.stdout.write(self.style.SUCCESS(
+                f"\nTerminé — {len(flights)} colis créé(s). Owner: {owner.username}"
+            ))
