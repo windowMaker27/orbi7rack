@@ -253,6 +253,11 @@ class Command(BaseCommand):
         status: str,
         events_data: list[dict],
         now,
+        # Champs optionnels pour forcer la position persistée sur le modèle
+        # (contourne le fallback centroïde-pays du serializer)
+        last_live_lat: float | None = None,
+        last_live_lng: float | None = None,
+        last_live_at=None,
     ) -> None:
         """Crée un colis statique (pas de vol live) avec ses événements."""
         Parcel.objects.filter(tracking_number=tracking_number).delete()
@@ -265,6 +270,9 @@ class Command(BaseCommand):
             dest_country=dest_country,
             status=status,
             last_synced_at=now,
+            last_live_lat=last_live_lat,
+            last_live_lng=last_live_lng,
+            last_live_at=last_live_at,
         )
         events = [
             TrackingEvent(
@@ -287,16 +295,14 @@ class Command(BaseCommand):
         """
         4 scénarios de démo fixés — toujours les mêmes pour une présentation reproductible.
 
-        1. DEMO-TRUCK-FR   : out_for_delivery — camion en route sur Paris
-        2. DEMO-PENDING-CN : pending — colis bloqué dans un centre de tri à Shanghai
-        3. DEMO-OFD-JP     : out_for_delivery — livraison express Tokyo
-        4. DEMO-DELIVERED  : delivered — colis livré à New York
+        1. DEMO-TRUCK-FR      : out_for_delivery — camion en route sur Paris
+        2. DEMO-PENDING-CN    : pending — colis bloqué dans un centre de tri à Shanghai
+        3. DEMO-OFD-JP        : out_for_delivery — livraison express Tokyo
+        4. DEMO-DELIVERED-US  : delivered — colis livré à Manhattan
         """
 
         # ------------------------------------------------------------
         # 1. Camion en livraison — Paris, France
-        # Position courante : quelque part entre Roissy et le centre de Paris
-        # (autoroute A1, hauteur Villepinte)
         # ------------------------------------------------------------
         self._create_static_parcel(
             owner=owner,
@@ -329,7 +335,6 @@ class Command(BaseCommand):
                     "description": "Colis trié et assigné au livreur",
                 },
                 {
-                    # Position actuelle : A1 hauteur Villepinte — en route vers Paris
                     "timestamp": now - timezone.timedelta(hours=1, minutes=20),
                     "location": "Villepinte (93) — en route",
                     "lat": 48.9667, "lng": 2.5333,
@@ -364,7 +369,7 @@ class Command(BaseCommand):
                     "location": "Centre de tri Shanghai — Pudong",
                     "lat": 31.1443, "lng": 121.8083,
                     "status": "pending",
-                    "description": "Colis reu au centre de tri, en attente de contrôle export",
+                    "description": "Colis reçu au centre de tri, en attente de contrôle export",
                 },
                 {
                     "timestamp": now - timezone.timedelta(hours=6),
@@ -411,7 +416,6 @@ class Command(BaseCommand):
                     "description": "En cours de livraison — livreur en route",
                 },
                 {
-                    # Position actuelle : Shinjuku, Tokyo
                     "timestamp": now - timezone.timedelta(minutes=30),
                     "location": "Shinjuku, Tokyo",
                     "lat": 35.6895, "lng": 139.6917,
@@ -423,8 +427,14 @@ class Command(BaseCommand):
         )
 
         # ------------------------------------------------------------
-        # 4. Delivered — livré à New York
+        # 4. Delivered — livré à Manhattan, New York
+        # last_live_lat/lng forcés = position du dernier event
+        # → évite le fallback centroïde US (37.09, -95.71) du serializer
         # ------------------------------------------------------------
+        delivered_lat = 40.7549
+        delivered_lng = -73.9840
+        delivered_at  = now - timezone.timedelta(days=2, hours=1)
+
         self._create_static_parcel(
             owner=owner,
             tracking_number="DEMO-DELIVERED-US",
@@ -433,6 +443,9 @@ class Command(BaseCommand):
             origin_country="DE",
             dest_country="US",
             status="delivered",
+            last_live_lat=delivered_lat,
+            last_live_lng=delivered_lng,
+            last_live_at=delivered_at,
             events_data=[
                 {
                     "timestamp": now - timezone.timedelta(days=4),
@@ -456,10 +469,9 @@ class Command(BaseCommand):
                     "description": "Colis en cours de livraison",
                 },
                 {
-                    # Lieu de livraison final : Midtown Manhattan
-                    "timestamp": now - timezone.timedelta(days=2, hours=1),
+                    "timestamp": delivered_at,
                     "location": "Midtown Manhattan, New York",
-                    "lat": 40.7549, "lng": -73.9840,
+                    "lat": delivered_lat, "lng": delivered_lng,
                     "status": "delivered",
                     "description": "Colis remis au destinataire. Signé: J. Morrison",
                 },
