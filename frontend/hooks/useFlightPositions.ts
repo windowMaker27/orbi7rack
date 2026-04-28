@@ -73,7 +73,6 @@ export function useFlightPositions(parcels: Parcel[]): {
 
         if (data.source === "live" && data.lat != null && data.lng != null) {
           if (data.stale) {
-            // Backend a renvoyé un stale depuis la DB — on garde stale_since du backend
             const entry: FlightPosition = {
               ...data,
               stale: true,
@@ -82,13 +81,11 @@ export function useFlightPositions(parcels: Parcel[]): {
             lastLiveRef.current[id] = entry;
             next[id] = entry;
           } else {
-            // Position live fraîche
             const entry: FlightPosition = { ...data, stale: false, stale_since: null };
             lastLiveRef.current[id] = entry;
             next[id] = entry;
           }
         } else if (lastLiveRef.current[id]) {
-          // API simulated mais on a un cache live — on marque stale
           const cached = lastLiveRef.current[id];
           next[id] = {
             ...cached,
@@ -96,7 +93,6 @@ export function useFlightPositions(parcels: Parcel[]): {
             stale_since: cached.stale_since ?? new Date().toISOString(),
           };
         } else {
-          // Jamais eu de live — recalcul progress si nécessaire
           const origin = data.origin;
           const dest   = data.destination;
           let progress = data.progress;
@@ -122,10 +118,11 @@ export function useFlightPositions(parcels: Parcel[]): {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [access, inTransitParcels.length]);
 
+  // Arc par défaut pour tous les colis (live ou simulé)
   const positionMode: PositionModeMap = {};
-  for (const [idStr, pos] of Object.entries(positions)) {
+  for (const [idStr] of Object.entries(positions)) {
     const id = Number(idStr);
-    positionMode[id] = modeOverrides[id] ?? (pos.source === "live" ? "arc" : "live");
+    positionMode[id] = modeOverrides[id] ?? "arc";
   }
 
   return { positions, positionMode, setPositionMode: setModeOverrides };

@@ -68,9 +68,12 @@ COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "CL": (-35.6751, -71.5430),
     "AR": (-38.4161, -63.6167),
     "CO": (4.5709, -74.2973),
+    "RE": (-21.1151, 55.5364),
+    "QA": (25.3548, 51.1839),
 }
 
 # Coordonnées des principaux aéroports IATA
+# Utilisé pour résoudre origin/destination sur les vols live (plus précis que les centroïdes pays)
 AIRPORT_COORDS: dict[str, tuple[float, float]] = {
     "LHR": (51.4700, -0.4543),
     "CDG": (49.0097, 2.5479),
@@ -162,35 +165,36 @@ def _compute_progress(origin: tuple, destination: tuple, current: tuple) -> floa
     return round(min(done / total, 0.95), 4)
 
 
-def _resolve_endpoints(parcel) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+def _compute_simulated_progress(parcel) -> float:
     """
-    Résout (origin_coords, dest_coords) pour un colis.
-    Priorité : coordonnées des TrackingEvents géocodés (premier=départ, dernier=arrivée)
-    Fallback : centroïde pays.
+    Calcule la progression simulée depuis les timestamps des events géocodés.
+
+    Logique :
+      - departure_event  = premier event (timestamp le plus ancien)
+      - arrival_event    = dernier event  (timestamp le plus récent)
+      - progress = (now - departure) / (arrival - departure), clampé [0.05, 0.95]
+
+    Si un seul event ou timestamps identiques → 0.5 par défaut.
+    Si now < departure → 0.05 (pas encore décollé).
+    Si now > arrival   → 0.95 (atterri, on ne montre pas 100% tant qu'on n'a pas de confirmation).
     """
-    geo_events = list(
-        parcel.events.filter(latitude__isnull=False, longitude__isnull=False)
-        .order_by("timestamp")
-    )
+    geo_events = parcel.events.filter(
+        latitude__isnull=False, longitude__isnull=False
+    ).order_by("timestamp")
 
-    if len(geo_events) >= 2:
-        first, last = geo_events[0], geo_events[-1]
-        origin = (first.latitude, first.longitude)
-        destination = (last.latitude, last.longitude)
-        return origin, destination
+    count = geo_events.count()
+    if count < 2:
+        return 0.5
 
-    # Fallback partiel : un seul event géocodé
-    origin_coords = _country_centroid(parcel.origin_country)
-    dest_coords = _country_centroid(parcel.dest_country)
+    departure_ts = geo_events.first().timestamp
+    arrival_ts   = geo_events.last().timestamp
+    total_sec    = (arrival_ts - departure_ts).total_seconds()
 
-    if len(geo_events) == 1:
-        e = geo_events[0]
-        if not origin_coords:
-            origin_coords = (e.latitude, e.longitude)
-        elif not dest_coords:
-            dest_coords = (e.latitude, e.longitude)
+    if total_sec <= 0:
+        return 0.5
 
-    return origin_coords, dest_coords
+    elapsed = (timezone.now() - departure_ts).total_seconds()
+    return round(min(max(elapsed / total_sec, 0.05), 0.95), 4)
 
 
 class ParcelViewSet(
@@ -247,21 +251,30 @@ class ParcelViewSet(
     def flight_position(self, request, pk=None):
         parcel = self.get_object()
 
-        # Résolution précise origine/destination via TrackingEvents
-        origin_coords, dest_coords = _resolve_endpoints(parcel)
+        # --- Coordonnées d'arc : centroid pays (fallback simulation) ---
+        origin_coords = _country_centroid(parcel.origin_country)
+        dest_coords   = _country_centroid(parcel.dest_country)
+
+        # Fallback sur geo_events si pays absent de la table
+        if not origin_coords or not dest_coords:
+            geo_events = parcel.events.filter(
+                latitude__isnull=False, longitude__isnull=False
+            ).order_by("timestamp")
+            if geo_events.count() >= 2:
+                first, last = geo_events.first(), geo_events.last()
+                origin_coords = origin_coords or (first.latitude, first.longitude)
+                dest_coords   = dest_coords   or (last.latitude,  last.longitude)
 
         # --- Live (OpenSky / FR24) ---
         if parcel.flight_number:
             position = get_flight_live_position(parcel.flight_number)
             if position:
                 # Priorité : coords aéroports IATA retournés par le provider live
-                # (plus précis et dans le bon sens que les centroïdes pays)
-                live_origin_iata = position.get("origin_iata")
-                live_dest_iata   = position.get("destination_iata")
-                live_origin = _airport_coords(live_origin_iata)
-                live_dest   = _airport_coords(live_dest_iata)
+                # (sens de vol correct, plus précis que les centroïdes pays du colis)
+                live_origin = _airport_coords(position.get("origin_iata"))
+                live_dest   = _airport_coords(position.get("destination_iata"))
 
-                # Fallback sur _resolve_endpoints si IATA inconnus
+                # Fallback sur centroïdes pays si IATA absent ou inconnu
                 final_origin = live_origin or origin_coords
                 final_dest   = live_dest   or dest_coords
 
@@ -306,17 +319,7 @@ class ParcelViewSet(
                 status=404,
             )
 
-        geo_events = parcel.events.filter(
-            latitude__isnull=False, longitude__isnull=False
-        ).order_by("timestamp")
-
-        if geo_events.count() >= 2:
-            total_sec = (geo_events.last().timestamp - geo_events.first().timestamp).total_seconds()
-            elapsed   = (timezone.now() - geo_events.first().timestamp).total_seconds()
-            progress  = min(elapsed / total_sec, 0.95) if total_sec > 0 else 0.5
-        else:
-            progress = 0.5
-
+        progress = _compute_simulated_progress(parcel)
         position = get_simulated_position(origin_coords, dest_coords, progress)
         position["origin"]      = {"lat": origin_coords[0], "lng": origin_coords[1]}
         position["destination"] = {"lat": dest_coords[0],   "lng": dest_coords[1]}

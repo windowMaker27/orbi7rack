@@ -47,10 +47,86 @@ const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-const HEX_PALETTE = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+const BLOOM = {
+  dark:  { intensity: 1.6, threshold: 0.3, smoothing: 0.4 },
+  light: { intensity: 0.5, threshold: 0.5, smoothing: 0.4 },
+};
+const AMBIENT = {
+  dark:  { intensity: 1.0 },
+  light: { intensity: 0.8 },
+};
+const DIRLIGHT = {
+  dark:  { color: 0xff9944, intensity: 0.8 },
+  light: { color: 0xd4eeff, intensity: 1.1 },
+};
 
-function stableHexColor(featureIndex: number): string {
-  return HEX_PALETTE[featureIndex % HEX_PALETTE.length];
+const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
+
+async function fetchCountries(): Promise<any> {
+  // 1. Route locale Next.js (proxy serveur, pas de CORS)
+  try {
+    const res = await fetch("/api/countries");
+    if (res.ok) return await res.json();
+  } catch { /* fallback */ }
+
+  // 2. Fallback direct (si api route indisponible)
+  const fallbacks = [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json",
+  ];
+  for (const url of fallbacks) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      // Si c'est du TopoJSON (world-atlas), convertir
+      if (data.type === "Topology") {
+        const { feature } = await import("topojson-client");
+        return feature(data, data.objects.countries);
+      }
+      return data;
+    } catch { continue; }
+  }
+  throw new Error("Impossible de charger les données pays");
+}
+
+function latitudeBiomeColor(lat: number): string {
+  const a = Math.abs(lat);
+  if (a < 15)  return "#4a7c3f";
+  if (a < 22)  return "#7ab648";
+  if (a < 30)  return "#c8a84b";
+  if (a < 37)  return "#b89060";
+  if (a < 45)  return "#8ab55a";
+  if (a < 55)  return "#6a9e48";
+  if (a < 65)  return "#4d7a38";
+  if (a < 75)  return "#7a9e6a";
+  return "#c8d4b8";
+}
+
+function featureCentroidLat(feature: any): number {
+  try {
+    const geo = feature.geometry;
+    let coords: number[][];
+    if (geo.type === "Polygon") {
+      coords = geo.coordinates[0];
+    } else if (geo.type === "MultiPolygon") {
+      coords = geo.coordinates
+        .map((p: number[][][]) => p[0])
+        .reduce((a: number[][], b: number[][]) => b.length > a.length ? b : a);
+    } else {
+      return 0;
+    }
+    const sum = coords.reduce((acc: number, c: number[]) => acc + c[1], 0);
+    return sum / coords.length;
+  } catch {
+    return 0;
+  }
+}
+
+function stableHexColor(feature: any, isDark: boolean): string {
+  if (isDark) return HEX_PALETTE_DARK[(feature.__hexIdx ?? 0) % HEX_PALETTE_DARK.length];
+  const lat = feature.__centroidLat ?? featureCentroidLat(feature);
+  return latitudeBiomeColor(lat);
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -90,136 +166,63 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-function resolveEndpoints(
-  parcel: Parcel,
-  flightPos: { origin?: { lat: number; lng: number } } | undefined,
-): { origin: [number, number] | null; destination: [number, number] | null } {
-  // Priorité 1 : coords depuis flight_position API (précision aéroport)
-  if (flightPos?.origin?.lat != null && flightPos?.origin?.lng != null) {
-    const destFromFlight = (flightPos as any).destination;
-    const origin: [number, number] = [flightPos.origin.lat, flightPos.origin.lng];
-    const destination: [number, number] | null = destFromFlight?.lat != null
-      ? [destFromFlight.lat, destFromFlight.lng]
-      : getCentroid(parcel.dest_country);
-    return { origin, destination };
+function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
+  const fp = flightPos[p.id];
+  if (fp) {
+    if (fp.source === "live" && !fp.stale) return { lat: fp.lat, lng: fp.lng };
+    if (fp.origin && fp.destination && fp.progress != null) {
+      const progress = Math.max(0.05, Math.min(0.95, fp.progress));
+      const [lat, lng] = slerpLatLng(fp.origin.lat, fp.origin.lng, fp.destination.lat, fp.destination.lng, progress);
+      return { lat, lng };
+    }
+    if (fp.lat != null && fp.lng != null) return { lat: fp.lat, lng: fp.lng };
   }
-
-  // Priorité 2 : coords depuis les TrackingEvents (exposées par le serializer)
-  const oc = (parcel as any).origin_coords;
-  const dc = (parcel as any).dest_coords;
-  if (oc?.lat != null && dc?.lat != null) {
-    return {
-      origin: [oc.lat, oc.lng],
-      destination: [dc.lat, dc.lng],
-    };
-  }
-
-  // Fallback : centroïde pays
-  return {
-    origin: getCentroid(parcel.origin_country),
-    destination: getCentroid(parcel.dest_country),
-  };
+  return p.estimated_position ?? null;
 }
 
-function buildData(parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
-  const points: any[] = [];
-  parcels.forEach(p => {
-    const fp = flightPositions[p.id];
-    const { origin, destination } = resolveEndpoints(p, fp);
-    const color = STATUS_COLORS[p.status] ?? "#ffffff";
-
-    if (origin) {
-      points.push({
-        lat: origin[0], lng: origin[1],
-        label: `${p.tracking_number} \u2014 d\u00e9part`,
-        status: p.status, description: p.description,
-        color, altitude: 0.02, radius: 0.35,
-      });
-    }
-
-    if (destination) {
-      points.push({
-        lat: destination[0], lng: destination[1],
-        label: `${p.tracking_number} \u2014 arriv\u00e9e`,
-        status: p.status, description: p.description,
-        color: color + "99", altitude: 0.02, radius: 0.3,
-      });
-    }
-
-    if (fp?.lat != null && fp?.lng != null) {
-      points.push({
-        lat: fp.lat, lng: fp.lng,
-        label: p.tracking_number,
-        status: p.status, description: p.description,
-        color, altitude: 0.04, radius: 0.2,
-      });
-    } else if (p.estimated_position) {
-      points.push({
-        lat: p.estimated_position.lat, lng: p.estimated_position.lng,
-        label: p.tracking_number,
-        status: p.status, description: p.description,
-        color, altitude: 0.02, radius: 0.4,
-      });
-    }
-  });
-
+function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
+  const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+  const points = parcels.map(p => {
+    const pos = resolveCurrentPosition(p, flightPositions);
+    if (!pos) return null;
+    return { lat: pos.lat, lng: pos.lng, label: p.tracking_number, status: p.status, description: p.description, color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"), altitude: 0.02, radius: 0.4 };
+  }).filter(Boolean);
   const arcs = parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
-      const fp = flightPositions[p.id];
-      const { origin, destination } = resolveEndpoints(p, fp);
-      if (!origin || !destination) return null;
-      return {
-        startLat: origin[0], startLng: origin[1],
-        endLat: destination[0], endLng: destination[1],
-        color: STATUS_COLORS[p.status] ?? "#ffffff",
-        label: p.tracking_number,
-      };
+      const origin = getCentroid(p.origin_country);
+      const dest = p.estimated_position;
+      if (!origin || !dest) return null;
+      return { startLat: origin[0], startLng: origin[1], endLat: dest.lat, endLng: dest.lng, color: SC[p.status] ?? "#ffffff", label: p.tracking_number };
     }).filter(Boolean);
-
   const rings = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const fp = flightPositions[p.id];
-      const pos = (fp?.lat != null && fp?.lng != null) ? { lat: fp.lat, lng: fp.lng } : p.estimated_position;
+      const pos = resolveCurrentPosition(p, flightPositions);
       if (!pos) return null;
-      return { lat: pos.lat, lng: pos.lng, color: STATUS_COLORS[p.status] ?? "#fff" };
+      return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
     }).filter(Boolean);
-
   const transport = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const fp = flightPositions[p.id];
-      const { origin, destination } = resolveEndpoints(p, fp);
-      if (!origin || !destination) return null;
-
-      let initLat: number, initLng: number;
-      if (fp?.lat != null && fp?.lng != null) {
-        initLat = fp.lat;
-        initLng = fp.lng;
-      } else {
-        [initLat, initLng] = slerpLatLng(origin[0], origin[1], destination[0], destination[1], 0.5);
-      }
-
+      const origin = getCentroid(p.origin_country);
+      const dest = p.estimated_position;
+      if (!origin || !dest) return null;
       return {
         id: p.id,
         startLat: origin[0], startLng: origin[1],
-        endLat: destination[0], endLng: destination[1],
-        color: STATUS_COLORS[p.status] ?? "#fff",
-        emoji: p.status === "out_for_delivery" ? "\ud83d\ude9a" : "\u2708\ufe0f",
-        _curLat: initLat as number | null,
-        _curLng: initLng as number | null,
-        _curAlt: null as number | null,
-        _curHdg: null as number | null,
+        endLat: dest.lat, endLng: dest.lng,
+        color: SC[p.status] ?? "#fff",
+        emoji: p.status === "out_for_delivery" ? "\uD83D\uDE9A" : "\u2708\uFE0F",
+        _curLat: null as number | null, _curLng: null as number | null,
+        _curAlt: null as number | null, _curHdg: null as number | null,
       };
     }).filter(Boolean);
-
   return { points, arcs, rings, transport };
 }
 
-function applyData(globe: any, parcels: Parcel[], flightPositions: FlightPositionMap = {}) {
-  const { points, arcs, rings } = buildData(parcels, flightPositions);
-
+function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
+  const { points, arcs, rings } = buildData(parcels, isDark, flightPositions);
   globe
     .pointsData(points)
     .pointLat((d: any) => d.lat).pointLng((d: any) => d.lng)
@@ -227,11 +230,10 @@ function applyData(globe: any, parcels: Parcel[], flightPositions: FlightPositio
     .pointLabel((d: any) => `
       <div style="background:rgba(10,0,0,0.85);border:1px solid rgba(255,68,0,0.4);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#fff;min-width:180px;">
         <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
-        <div style="color:${d.color};margin-bottom:4px">\u25cf ${d.status}</div>
+        <div style="color:${d.color};margin-bottom:4px">\u25CF ${d.status}</div>
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
       </div>
     `);
-
   globe
     .arcsData(arcs)
     .arcStartLat((d: any) => d.startLat).arcStartLng((d: any) => d.startLng)
@@ -240,12 +242,58 @@ function applyData(globe: any, parcels: Parcel[], flightPositions: FlightPositio
     .arcAltitude(ARC_ALTITUDE).arcStroke(0.5)
     .arcDashLength(0.4).arcDashGap(0.2).arcDashAnimateTime(2500)
     .arcLabel((d: any) => `<div style="font-family:monospace;font-size:11px;color:${d.color};background:rgba(10,0,0,0.8);padding:6px 10px;border-radius:6px">${d.label}</div>`);
-
   globe
     .ringsData(rings)
     .ringLat((d: any) => d.lat).ringLng((d: any) => d.lng)
     .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "00")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
+}
+
+function purgeLights(scene: THREE.Scene) {
+  const toRemove: THREE.Object3D[] = [];
+  scene.traverse((obj: any) => { if (obj.isAmbientLight || obj.isDirectionalLight) toRemove.push(obj); });
+  toRemove.forEach(l => scene.remove(l));
+}
+
+function applyLighting(scene: THREE.Scene, isDark: boolean) {
+  purgeLights(scene);
+  const amb = isDark ? AMBIENT.dark : AMBIENT.light;
+  const dir = isDark ? DIRLIGHT.dark : DIRLIGHT.light;
+  scene.add(new THREE.AmbientLight(0xffffff, amb.intensity));
+  const dirLight = new THREE.DirectionalLight(dir.color, dir.intensity);
+  dirLight.position.set(1, 1, 1);
+  scene.add(dirLight);
+}
+
+function applyHexColors(globe: any, isDark: boolean) {
+  globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
+}
+
+const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
+const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
+
+function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
+  const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
+  globe
+    .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
+    .globeMaterial(new THREE.MeshPhongMaterial({
+      color:    new THREE.Color(ocean.color),
+      emissive: new THREE.Color(ocean.emissive),
+      transparent: true, opacity: 0.95,
+    }));
+  applyLighting(scene, isDark);
+  applyHexColors(globe, isDark);
+}
+
+function applyBloom(composer: EffectComposer, isDark: boolean) {
+  const passes = (composer as any).passes as any[];
+  const effectPass = passes.find((p: any) => p instanceof EffectPass);
+  if (!effectPass) return;
+  const bloom = (effectPass as any).effects?.find((e: any) => e instanceof BloomEffect);
+  if (!bloom) return;
+  const b = isDark ? BLOOM.dark : BLOOM.light;
+  bloom.intensity = b.intensity;
+  bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = b.threshold;
 }
 
 function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
@@ -259,7 +307,7 @@ function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Spr
   });
 }
 
-export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {} }: GlobeProps) {
+export default function Globe({ parcels, globeRef, flightPositions = {}, positionMode = {}, theme = "dark" }: GlobeProps) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const composerRef     = useRef<EffectComposer | null>(null);
   const frameRef        = useRef<number>(0);
@@ -268,9 +316,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   const sceneRef        = useRef<THREE.Scene | null>(null);
   const flightPosRef    = useRef<FlightPositionMap>(flightPositions);
   const positionModeRef = useRef<PositionModeMap>(positionMode);
+  const themeRef        = useRef<Theme>(theme);
   const spriteStateRef  = useRef<Map<number, { lat: number; lng: number; alt: number; hdg: number }>>(new Map());
-  // Flag : suspend composer.render() pendant les animations POV de globe.gl
-  const povAnimatingRef = useRef<boolean>(false);
 
   flightPosRef.current    = flightPositions;
   positionModeRef.current = positionMode;
@@ -278,31 +325,38 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
   useEffect(() => {
     pendingRef.current = parcels;
     if (!globeRef.current) return;
-    applyData(globeRef.current, parcels, flightPositions);
+    const isDark = theme === "dark";
+    applyData(globeRef.current, parcels, isDark, flightPositions);
     if (sceneRef.current) {
+      applyTheme(globeRef.current, sceneRef.current, isDark);
       const prevState = spriteStateRef.current;
       spritesRef.current.forEach(({ sprite }) => sceneRef.current!.remove(sprite));
-      const newTransport = buildData(parcels, flightPositions).transport as any[];
+      const newTransport = buildData(parcels, isDark, flightPositions).transport as any[];
       newTransport.forEach((arc: any) => {
         const saved = prevState.get(arc.id);
-        if (saved) {
-          arc._curLat = saved.lat; arc._curLng = saved.lng;
-          arc._curAlt = saved.alt; arc._curHdg = saved.hdg;
-        }
+        if (saved) { arc._curLat = saved.lat; arc._curLng = saved.lng; arc._curAlt = saved.alt; arc._curHdg = saved.hdg; }
       });
       spritesRef.current = setupSprites(sceneRef.current, newTransport);
     }
-  }, [parcels, globeRef, flightPositions]);
+    if (composerRef.current) applyBloom(composerRef.current, isDark);
+  }, [parcels, theme, globeRef, flightPositions]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const init = async () => {
+      const isDark = themeRef.current === "dark";
       const [{ default: GlobeGL }, countries] = await Promise.all([
         import("globe.gl"),
-        fetch("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(r => r.json()),
+        fetchCountries(),
       ]);
 
-      countries.features.forEach((f: any, i: number) => { f.__hexIdx = i; });
+      countries.features.forEach((f: any, i: number) => {
+        f.__hexIdx = i;
+        f.__centroidLat = featureCentroidLat(f);
+      });
+
+      const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
+      const b = isDark ? BLOOM.dark : BLOOM.light;
 
       const globe = (GlobeGL as any)(
         { animateIn: false, rendererConfig: { antialias: true, alpha: true } }
@@ -311,27 +365,25 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
         .showGraticules(true)
-        .atmosphereColor("#ff6600")
+        .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
         .atmosphereAltitude(0.12)
         .globeMaterial(new THREE.MeshPhongMaterial({
-          color: new THREE.Color("#0d0000"),
-          emissive: new THREE.Color("#0a0000"),
+          color:    new THREE.Color(ocean.color),
+          emissive: new THREE.Color(ocean.emissive),
           transparent: true, opacity: 0.95,
         }))
         .hexPolygonsData(countries.features)
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
-        .hexPolygonColor((feat: any) => stableHexColor(feat.__hexIdx ?? 0))
+        .hexPolygonColor((feat: any) => stableHexColor(feat, isDark))
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
       const scene = globe.scene() as THREE.Scene;
       sceneRef.current = scene;
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-      const dir = new THREE.DirectionalLight(0xff9944, 0.8);
-      dir.position.set(1, 1, 1);
-      scene.add(dir);
+      applyLighting(scene, isDark);
+      setTimeout(() => applyLighting(scene, isDark), 200);
 
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
@@ -340,7 +392,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
             if (obj.material) obj.material = new THREE.LineBasicMaterial({
-              color: new THREE.Color("#993300"),
+              color: new THREE.Color(isDark ? "#993300" : "#0066bb"),
               transparent: true, opacity: 0.25,
             });
           }
@@ -348,13 +400,15 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       }, 500);
 
       globeRef.current = globe;
+      applyData(globe, pendingRef.current, isDark, flightPosRef.current);
 
-      // Expose setPOVAnimating pour page.tsx
-      globe.setPOVAnimating = (val: boolean) => { povAnimatingRef.current = val; };
-
-      applyData(globe, pendingRef.current, flightPosRef.current);
-
-      const transport = buildData(pendingRef.current, flightPosRef.current).transport as any[];
+      const transport = buildData(pendingRef.current, isDark, flightPosRef.current).transport as any[];
+      transport.forEach((arc: any) => {
+        const [midLat, midLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
+        arc._curLat = midLat; arc._curLng = midLng;
+        arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
+        arc._curHdg = 0;
+      });
       spritesRef.current = setupSprites(scene, transport);
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
@@ -363,36 +417,35 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       const composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(new EffectPass(camera, new BloomEffect({
-        intensity: 1.6,
-        luminanceThreshold: 0.15,
-        luminanceSmoothing: 0.4,
+        intensity: b.intensity,
+        luminanceThreshold: b.threshold,
+        luminanceSmoothing: b.smoothing,
         mipmapBlur: true,
       })));
       composerRef.current = composer;
 
+      for (let i = 0; i < 5; i++) composer.render();
+
       const animate = () => {
         frameRef.current = requestAnimationFrame(animate);
-
+        globe.controls().update();
         spritesRef.current.forEach(({ sprite, arc }) => {
           if (!arc) return;
           const livePos = flightPosRef.current[arc.id];
           const mode = positionModeRef.current[arc.id] ?? "arc";
-
           let targetLat: number, targetLng: number, targetAlt: number;
           let targetHdg: number | null = null;
-
           if (livePos?.lat != null && livePos?.lng != null) {
             const rawProgress = livePos.progress;
             const progress = (rawProgress != null && rawProgress > 0 && rawProgress < 1)
               ? Math.max(0.05, Math.min(0.95, rawProgress)) : 0.5;
-
             if (mode === "live") {
-              targetLat = livePos.lat;
-              targetLng = livePos.lng;
+              targetLat = livePos.lat; targetLng = livePos.lng;
               targetAlt = Math.min(ARC_ALTITUDE, ((livePos.altitude ?? 10000) / 12000) * ARC_ALTITUDE);
             } else {
-              targetLat = livePos.lat;
-              targetLng = livePos.lng;
+              const origin = livePos.origin ?? { lat: arc.startLat, lng: arc.startLng };
+              const dest = livePos.destination ?? { lat: arc.endLat, lng: arc.endLng };
+              [targetLat, targetLng] = slerpLatLng(origin.lat, origin.lng, dest.lat, dest.lng, progress);
               targetAlt = Math.sin(progress * Math.PI) * ARC_ALTITUDE;
             }
             targetHdg = livePos.heading ?? null;
@@ -400,33 +453,16 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
             [targetLat, targetLng] = slerpLatLng(arc.startLat, arc.startLng, arc.endLat, arc.endLng, 0.5);
             targetAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
           }
-
-          if (arc._curLat === null) {
-            arc._curLat = targetLat; arc._curLng = targetLng;
-            arc._curAlt = targetAlt; arc._curHdg = targetHdg ?? 0;
-          }
-
           arc._curLat! += (targetLat - arc._curLat!) * LERP_POS;
           arc._curLng! += (targetLng - arc._curLng!) * LERP_POS;
           arc._curAlt! += (targetAlt - arc._curAlt!) * LERP_POS;
           if (targetHdg !== null) arc._curHdg = lerpAngle(arc._curHdg!, targetHdg, LERP_HDG);
-
-          spriteStateRef.current.set(arc.id, {
-            lat: arc._curLat!, lng: arc._curLng!,
-            alt: arc._curAlt!, hdg: arc._curHdg!,
-          });
-
-          if (globeRef.current) {
-            const coords = globeRef.current.getCoords(arc._curLat, arc._curLng, arc._curAlt);
-            sprite.position.set(coords.x, coords.y, coords.z);
-          }
+          spriteStateRef.current.set(arc.id, { lat: arc._curLat!, lng: arc._curLng!, alt: arc._curAlt!, hdg: arc._curHdg! });
+          const coords = globe.getCoords(arc._curLat, arc._curLng, arc._curAlt);
+          sprite.position.set(coords.x, coords.y, coords.z);
           (sprite.material as THREE.SpriteMaterial).rotation = -(arc._curHdg! * Math.PI) / 180;
         });
-
-        // Suspend le rendu composer pendant les animations POV pour éviter le double-rendu
-        if (!povAnimatingRef.current) {
-          composer.render();
-        }
+        composer.render();
       };
 
       animate();
@@ -436,21 +472,19 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
     const handleResize = () => {
       if (globeRef.current && containerRef.current) {
-        const w = containerRef.current.clientWidth;
-        const h = containerRef.current.clientHeight;
-        globeRef.current.width(w).height(h);
-        composerRef.current?.setSize(w, h);
+        globeRef.current.width(containerRef.current.clientWidth).height(containerRef.current.clientHeight);
+        composerRef.current?.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
       }
     };
     window.addEventListener("resize", handleResize);
-
     return () => {
-      cancelAnimationFrame(frameRef.current);
       window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(frameRef.current);
     };
   }, [globeRef]);
 
+  const bgColor = theme === "dark" ? "#0a0000" : "#0d4f7a";
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100vh" }} />
+    <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
   );
 }

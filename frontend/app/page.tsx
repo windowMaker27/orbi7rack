@@ -15,7 +15,63 @@ import type { PositionMode } from "@/hooks/useFlightPositions";
 
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
-const POV_DURATION = 800;
+/** Slerp sphérique identique à celui de Globe.tsx */
+function slerpLatLng(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+  t: number,
+): [number, number] {
+  const toRad = (d: number) => d * Math.PI / 180;
+  const toDeg = (r: number) => r * 180 / Math.PI;
+  const f1 = toRad(lat1), l1 = toRad(lng1), f2 = toRad(lat2), l2 = toRad(lng2);
+  const x1 = Math.cos(f1) * Math.cos(l1), y1 = Math.cos(f1) * Math.sin(l1), z1 = Math.sin(f1);
+  const x2 = Math.cos(f2) * Math.cos(l2), y2 = Math.cos(f2) * Math.sin(l2), z2 = Math.sin(f2);
+  const dot = Math.min(1, x1 * x2 + y1 * y2 + z1 * z2);
+  const omega = Math.acos(dot);
+  if (omega < 1e-10) return [lat1, lng1];
+  const s = Math.sin(omega);
+  const a = Math.sin((1 - t) * omega) / s, b = Math.sin(t * omega) / s;
+  return [
+    toDeg(Math.atan2(a * z1 + b * z2, Math.sqrt((a * x1 + b * x2) ** 2 + (a * y1 + b * y2) ** 2))),
+    toDeg(Math.atan2(a * y1 + b * y2, a * x1 + b * x2)),
+  ];
+}
+
+/**
+ * Résout la position caméra cible pour un colis :
+ * - live (non stale)           → coords GPS réelles
+ * - simulated / stale          → position interpolée sur l'arc (slerp)
+ * - pas de flightPosition      → estimated_position (centroïde pays dest)
+ */
+function resolveCameraTarget(
+  parcel: Parcel,
+  live: any,
+): { lat: number; lng: number } | null {
+  if (!live) return parcel.estimated_position ?? null;
+
+  // Live réel → position GPS directe
+  if (live.source === "live" && !live.stale && live.lat != null && live.lng != null) {
+    return { lat: live.lat, lng: live.lng };
+  }
+
+  // Simulé ou stale → interpoler sur l'arc
+  if (live.origin && live.destination && live.progress != null) {
+    const progress = Math.max(0.05, Math.min(0.95, live.progress));
+    const [lat, lng] = slerpLatLng(
+      live.origin.lat, live.origin.lng,
+      live.destination.lat, live.destination.lng,
+      progress,
+    );
+    return { lat, lng };
+  }
+
+  // Stale sans arc → coords du fp directement
+  if (live.lat != null && live.lng != null) {
+    return { lat: live.lat, lng: live.lng };
+  }
+
+  return parcel.estimated_position ?? null;
+}
 
 function GlobeWithData() {
   const { theme } = useTheme();
@@ -30,9 +86,7 @@ function GlobeWithData() {
 
   const handleSelectParcel = (parcel: Parcel) => {
     const live = flightPositionsRef.current[parcel.id];
-    const pos = (live?.source === "live" && live.lat != null && live.lng != null)
-      ? { lat: live.lat, lng: live.lng }
-      : parcel.estimated_position;
+    const pos  = resolveCameraTarget(parcel, live);
 
     if (pos && globeRef.current) {
       // Suspend le bloom pendant l'animation POV pour éviter le tremblement

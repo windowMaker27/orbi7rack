@@ -1,5 +1,6 @@
 """
 Usage:
+  python manage.py seed_demo
   python manage.py seed_demo AF011 BA306
   python manage.py seed_demo AF011:CDG:JFK BA306:LHR:CDG
   python manage.py seed_demo --user admin --reset AF011
@@ -12,7 +13,6 @@ Variables d'environnement :
   AVIATIONSTACK_API_KEY   — clé API AviationStack
   AVIATIONSTACK_BASE_URL  — défaut: http://api.aviationstack.com/v1
 """
-import os
 import requests
 from decouple import config as decouple_config
 from django.core.management.base import BaseCommand
@@ -28,24 +28,41 @@ IATA_META: dict[str, dict] = {
     "CDG": {"country": "FR", "lat": 49.0097,  "lng":   2.5479, "name": "Paris Charles de Gaulle"},
     "ORY": {"country": "FR", "lat": 48.7262,  "lng":   2.3652, "name": "Paris Orly"},
     "LHR": {"country": "GB", "lat": 51.4775,  "lng":  -0.4614, "name": "London Heathrow"},
+    "LGW": {"country": "GB", "lat": 51.1537,  "lng":  -0.1821, "name": "London Gatwick"},
+    "MAN": {"country": "GB", "lat": 53.3537,  "lng":  -2.2750, "name": "Manchester Intl"},
     "JFK": {"country": "US", "lat": 40.6413,  "lng": -73.7781, "name": "New York JFK"},
+    "EWR": {"country": "US", "lat": 40.6895,  "lng": -74.1745, "name": "New York Newark"},
+    "LGA": {"country": "US", "lat": 40.7772,  "lng": -73.8726, "name": "New York LaGuardia"},
     "LAX": {"country": "US", "lat": 33.9425,  "lng":-118.4081, "name": "Los Angeles"},
     "SFO": {"country": "US", "lat": 37.6213,  "lng":-122.3790, "name": "San Francisco"},
     "ORD": {"country": "US", "lat": 41.9742,  "lng": -87.9073, "name": "Chicago O'Hare"},
+    "ATL": {"country": "US", "lat": 33.6407,  "lng": -84.4277, "name": "Atlanta Hartsfield"},
+    "DFW": {"country": "US", "lat": 32.8998,  "lng": -97.0403, "name": "Dallas Fort Worth"},
+    "MIA": {"country": "US", "lat": 25.7959,  "lng": -80.2870, "name": "Miami Intl"},
+    "SEA": {"country": "US", "lat": 47.4502,  "lng":-122.3088, "name": "Seattle-Tacoma"},
+    "BOS": {"country": "US", "lat": 42.3656,  "lng": -71.0096, "name": "Boston Logan"},
+    "IAD": {"country": "US", "lat": 38.9531,  "lng": -77.4565, "name": "Washington Dulles"},
+    "IAH": {"country": "US", "lat": 29.9902,  "lng": -95.3368, "name": "Houston Bush Intercontinental"},
     "DXB": {"country": "AE", "lat": 25.2532,  "lng":  55.3657, "name": "Dubai Intl"},
     "SIN": {"country": "SG", "lat":  1.3644,  "lng": 103.9915, "name": "Singapore Changi"},
     "HKG": {"country": "HK", "lat": 22.3080,  "lng": 113.9185, "name": "Hong Kong Intl"},
     "PEK": {"country": "CN", "lat": 40.0799,  "lng": 116.6031, "name": "Beijing Capital"},
+    "PKX": {"country": "CN", "lat": 39.5097,  "lng": 116.4105, "name": "Beijing Daxing"},
     "PVG": {"country": "CN", "lat": 31.1443,  "lng": 121.8083, "name": "Shanghai Pudong"},
+    "SHA": {"country": "CN", "lat": 31.1979,  "lng": 121.3362, "name": "Shanghai Hongqiao"},
+    "CAN": {"country": "CN", "lat": 23.3924,  "lng": 113.2988, "name": "Guangzhou Baiyun"},
     "ICN": {"country": "KR", "lat": 37.4602,  "lng": 126.4407, "name": "Seoul Incheon"},
     "NRT": {"country": "JP", "lat": 35.7647,  "lng": 140.3864, "name": "Tokyo Narita"},
     "HND": {"country": "JP", "lat": 35.5494,  "lng": 139.7798, "name": "Tokyo Haneda"},
+    "KIX": {"country": "JP", "lat": 34.4347,  "lng": 135.2440, "name": "Osaka Kansai"},
     "FRA": {"country": "DE", "lat": 50.0379,  "lng":   8.5622, "name": "Frankfurt Intl"},
+    "MUC": {"country": "DE", "lat": 48.3538,  "lng":  11.7861, "name": "Munich Intl"},
     "AMS": {"country": "NL", "lat": 52.3086,  "lng":   4.7639, "name": "Amsterdam Schiphol"},
     "MAD": {"country": "ES", "lat": 40.4983,  "lng":  -3.5676, "name": "Madrid Barajas"},
-    "FCO": {"country": "IT", "lat": 41.8003,  "lng":  12.2389, "name": "Rome Fiumicino"},
-    "ZRH": {"country": "CH", "lat": 47.4647,  "lng":   8.5492, "name": "Zurich"},
     "BCN": {"country": "ES", "lat": 41.2971,  "lng":   2.0785, "name": "Barcelona El Prat"},
+    "FCO": {"country": "IT", "lat": 41.8003,  "lng":  12.2389, "name": "Rome Fiumicino"},
+    "MXP": {"country": "IT", "lat": 45.6306,  "lng":   8.7231, "name": "Milan Malpensa"},
+    "ZRH": {"country": "CH", "lat": 47.4647,  "lng":   8.5492, "name": "Zurich"},
     "BRU": {"country": "BE", "lat": 50.9010,  "lng":   4.4844, "name": "Brussels Zaventem"},
     "GRU": {"country": "BR", "lat": -23.4356, "lng": -46.4731, "name": "São Paulo Guarulhos"},
     "EZE": {"country": "AR", "lat": -34.8222, "lng": -58.5358, "name": "Buenos Aires Ezeiza"},
@@ -53,12 +70,14 @@ IATA_META: dict[str, dict] = {
     "MEX": {"country": "MX", "lat":  19.4363,  "lng": -99.0721, "name": "Mexico City Intl"},
     "YYZ": {"country": "CA", "lat":  43.6777,  "lng": -79.6248, "name": "Toronto Pearson"},
     "YUL": {"country": "CA", "lat":  45.4706,  "lng": -73.7408, "name": "Montreal Trudeau"},
+    "YVR": {"country": "CA", "lat":  49.1967,  "lng":-123.1815, "name": "Vancouver Intl"},
     "SYD": {"country": "AU", "lat": -33.9461, "lng": 151.1772, "name": "Sydney Kingsford Smith"},
     "MEL": {"country": "AU", "lat": -37.6690, "lng": 144.8410, "name": "Melbourne Tullamarine"},
     "CPT": {"country": "ZA", "lat": -33.9715, "lng":  18.6021, "name": "Cape Town Intl"},
     "JNB": {"country": "ZA", "lat": -26.1367, "lng":  28.2411, "name": "Johannesburg OR Tambo"},
     "CAI": {"country": "EG", "lat":  30.1219, "lng":  31.4056, "name": "Cairo Intl"},
     "IST": {"country": "TR", "lat":  41.2753, "lng":  28.7519, "name": "Istanbul Airport"},
+    "SAW": {"country": "TR", "lat":  40.8985,  "lng":  29.3092, "name": "Istanbul Sabiha Gökçen"},
     "DOH": {"country": "QA", "lat":  25.2731, "lng":  51.6081, "name": "Doha Hamad Intl"},
     "AUH": {"country": "AE", "lat":  24.4330, "lng":  54.6511, "name": "Abu Dhabi Intl"},
     "BKK": {"country": "TH", "lat":  13.6900, "lng": 100.7501, "name": "Bangkok Suvarnabhumi"},
@@ -67,13 +86,14 @@ IATA_META: dict[str, dict] = {
     "CGK": {"country": "ID", "lat":  -6.1256, "lng": 106.6559, "name": "Jakarta Soekarno-Hatta"},
     "DEL": {"country": "IN", "lat":  28.5562, "lng":  77.1000, "name": "Delhi Indira Gandhi"},
     "BOM": {"country": "IN", "lat":  19.0896, "lng":  72.8656, "name": "Mumbai Chhatrapati Shivaji"},
+    "BLR": {"country": "IN", "lat":  13.1986, "lng":  77.7066, "name": "Bangalore Kempegowda"},
     "RUN": {"country": "RE", "lat": -20.8872, "lng":  55.5136, "name": "La Réunion Roland Garros"},
     "VIE": {"country": "AT", "lat":  48.1103, "lng":  16.5697, "name": "Vienna Intl"},
-    "MUC": {"country": "DE", "lat":  48.3538, "lng":  11.7861, "name": "Munich Intl"},
     "LIS": {"country": "PT", "lat":  38.7742, "lng":  -9.1342, "name": "Lisbon Humberto Delgado"},
     "ARN": {"country": "SE", "lat":  59.6519, "lng":  17.9186, "name": "Stockholm Arlanda"},
     "CPH": {"country": "DK", "lat":  55.6180, "lng":  12.6508, "name": "Copenhagen Kastrup"},
     "HEL": {"country": "FI", "lat":  60.3172, "lng":  24.9633, "name": "Helsinki Vantaa"},
+    "OSL": {"country": "NO", "lat":  60.1939, "lng":  11.1004, "name": "Oslo Gardermoen"},
     "WAW": {"country": "PL", "lat":  52.1657, "lng":  20.9671, "name": "Warsaw Chopin"},
     "PRG": {"country": "CZ", "lat":  50.1008, "lng":  14.2600, "name": "Prague Václav Havel"},
     "BUD": {"country": "HU", "lat":  47.4298, "lng":  19.2611, "name": "Budapest Ferenc Liszt"},
@@ -81,7 +101,13 @@ IATA_META: dict[str, dict] = {
     "NBO": {"country": "KE", "lat":  -1.3192, "lng":  36.9275, "name": "Nairobi Jomo Kenyatta"},
     "LOS": {"country": "NG", "lat":   6.5774, "lng":   3.3212, "name": "Lagos Murtala Muhammed"},
     "ADD": {"country": "ET", "lat":   8.9779, "lng":  38.7993, "name": "Addis Ababa Bole"},
-    "ORD": {"country": "US", "lat":  41.9742, "lng": -87.9073, "name": "Chicago O'Hare"},
+    "ACC": {"country": "GH", "lat":   5.6052, "lng":  -0.1668, "name": "Accra Kotoka"},
+    "GVA": {"country": "CH", "lat":  46.2380, "lng":   6.1089, "name": "Geneva Cointrin"},
+    "DUS": {"country": "DE", "lat":  51.2895, "lng":   6.7668, "name": "Düsseldorf Intl"},
+    "HAM": {"country": "DE", "lat":  53.6304, "lng":  10.0060, "name": "Hamburg Intl"},
+    "NCE": {"country": "FR", "lat":  43.6584, "lng":   7.2159, "name": "Nice Côte d'Azur"},
+    "MRS": {"country": "FR", "lat":  43.4393, "lng":   5.2214, "name": "Marseille Provence"},
+    "LYS": {"country": "FR", "lat":  45.7256, "lng":   5.0811, "name": "Lyon Saint-Exupéry"},
 }
 
 
@@ -137,6 +163,7 @@ class Command(BaseCommand):
         flight_number = parts[0].upper()
 
         if len(parts) == 3:
+            # Bypass direct — la route est explicitement fournie, pas d'appel API
             return {
                 "flight_number": flight_number,
                 "origin_iata":   parts[1].upper(),
@@ -192,7 +219,7 @@ class Command(BaseCommand):
         if orig:
             events.append(TrackingEvent(
                 parcel=parcel,
-                timestamp=now + timezone.timedelta(hours=-2),
+                timestamp=now - timezone.timedelta(hours=2),
                 location=origin_name,
                 latitude=orig["lat"],
                 longitude=orig["lng"],
@@ -212,14 +239,18 @@ class Command(BaseCommand):
 
         TrackingEvent.objects.bulk_create(events)
         self.stdout.write(self.style.SUCCESS(
-            f"✅ {tracking_number} — {origin_country} → {dest_country} — vol {fn} ({len(events)} events)"
+            f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events)} events)"
         ))
 
+    # Vols longue distance — haute probabilité d'être en l'air
+    # Format : flight_number, origin_iata, dest_iata, airline
+    # Toujours utiliser le format bypass ici pour garantir la route souhaitée
     HARDCODED = [
-        {"flight_number": "AF6728", "origin_iata": "CDG", "dest_iata": "PEK", "airline": "Air France Cargo"},
-        {"flight_number": "AF652",  "origin_iata": "CDG", "dest_iata": "RUN", "airline": "Air France Cargo"},
-        {"flight_number": "KZ101",  "origin_iata": "LAX", "dest_iata": "NRT", "airline": "Air Astana Cargo"},
-        {"flight_number": "DE2291", "origin_iata": "CPT", "dest_iata": "FRA", "airline": "Condor Cargo"},
+        {"flight_number": "AF011",  "origin_iata": "CDG", "dest_iata": "JFK", "airline": "Air France"},
+        {"flight_number": "EK075",  "origin_iata": "DXB", "dest_iata": "LAX", "airline": "Emirates"},
+        {"flight_number": "QR007",  "origin_iata": "DOH", "dest_iata": "JFK", "airline": "Qatar Airways"},
+        {"flight_number": "SQ321",  "origin_iata": "SIN", "dest_iata": "LHR", "airline": "Singapore Airlines"},
+        {"flight_number": "AI127",  "origin_iata": "VIE", "dest_iata": "ORD", "airline": "Air India"},
     ]
 
     def handle(self, *args, **options):
