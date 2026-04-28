@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.tracking.models import Parcel, TrackingEvent
 
-# Centroïdes ISO2 pour le fallback de position
+# Centroïdes ISO2 pour le fallback de position (dernier recours uniquement)
 ISO2_CENTROIDS = {
     "AF": (33.93, 67.71), "AL": (41.15, 20.17), "DZ": (28.03, 1.65),
     "AO": (-11.20, 17.87), "AR": (-38.41, -63.61), "AT": (47.51, 14.55),
@@ -91,7 +91,7 @@ class ParcelSerializer(serializers.ModelSerializer):
     def get_origin_coords(self, obj):
         """
         Coordonnées précises de l'origine :
-        1. Premier TrackingEvent géocodé (aéroport de départ)
+        1. Premier TrackingEvent géocodé
         2. Fallback → centroïde origin_country
         """
         geo = self._geo_events(obj)
@@ -106,7 +106,7 @@ class ParcelSerializer(serializers.ModelSerializer):
     def get_dest_coords(self, obj):
         """
         Coordonnées précises de la destination :
-        1. Dernier TrackingEvent géocodé (aéroport d'arrivée)
+        1. Dernier TrackingEvent géocodé
         2. Fallback → centroïde dest_country
         """
         geo = self._geo_events(obj)
@@ -121,25 +121,36 @@ class ParcelSerializer(serializers.ModelSerializer):
     def get_estimated_position(self, obj):
         """
         Retourne {lat, lng, source} selon la priorité :
-        1. Colis delivered → centroïde dest_country
-        2. Dernier event avec coordonnées (in_transit)
-        3. Fallback → centroïde origin_country
+        1. last_live_lat/lng persisté sur le modèle (position GPS live ou seed explicite)
+        2. Dernier TrackingEvent géocodé (tous statuts)
+        3. Centroïde dest_country  (fallback de dernier recours, delivered ou non)
+        4. Centroïde origin_country (fallback ultime)
         """
-        if obj.status == Parcel.Status.DELIVERED:
-            pos = get_centroid(obj.dest_country)
-            if pos:
-                return {"lat": pos[0], "lng": pos[1], "source": "dest_country"}
+        # 1. Position live persistée (GPS avion, seed explicite, etc.)
+        if obj.last_live_lat is not None and obj.last_live_lng is not None:
+            return {
+                "lat": obj.last_live_lat,
+                "lng": obj.last_live_lng,
+                "source": "last_live",
+            }
 
+        # 2. Dernier event géocodé — valable pour tous les statuts y compris delivered
         geo_event = next(
             (e for e in obj.events.all() if e.latitude is not None and e.longitude is not None),
-            None
+            None,
         )
         if geo_event:
             return {"lat": geo_event.latitude, "lng": geo_event.longitude, "source": "last_event"}
 
+        # 3. Centroïde dest_country (dernier recours si aucun event géocodé)
+        pos = get_centroid(obj.dest_country)
+        if pos:
+            return {"lat": pos[0], "lng": pos[1], "source": "dest_centroid"}
+
+        # 4. Centroïde origin_country (ultime)
         pos = get_centroid(obj.origin_country)
         if pos:
-            return {"lat": pos[0], "lng": pos[1], "source": "origin_country"}
+            return {"lat": pos[0], "lng": pos[1], "source": "origin_centroid"}
 
         return None
 
