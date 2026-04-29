@@ -17,26 +17,15 @@ interface GlobeProps {
 
 // ============================================================
 // 🎨 DEMO 1 — COULEURS DES STATUTS (dark mode)
-// Modifiez les hex ici pour changer les couleurs en live.
-// Active : palette cyan/orange "radar"
 // ============================================================
 const STATUS_COLORS_DARK: Record<string, string> = {
-  pending:          "#ffaa00",  // 🟠 orange
-  in_transit:       "#00cfff",  // 🔵 cyan
-  out_for_delivery: "#00ff99",  // 🟢 vert néon
-  delivered:        "#44ff44",  // 🟢 vert
-  exception:        "#ff2222",  // 🔴 rouge
-  expired:          "#888888",  // ⚪ gris
+  pending:          "#ffaa00",
+  in_transit:       "#00cfff",
+  out_for_delivery: "#00ff99",
+  delivered:        "#44ff44",
+  exception:        "#ff2222",
+  expired:          "#888888",
 };
-// Variante pour la démo — décommentez et commentez le bloc ci-dessus :
-// const STATUS_COLORS_DARK: Record<string, string> = {
-//   pending:          "#f59e0b",  // ambre
-//   in_transit:       "#818cf8",  // violet pastel
-//   out_for_delivery: "#34d399",  // menthe
-//   delivered:        "#10b981",  // émeraude
-//   exception:        "#f87171",  // corail
-//   expired:          "#6b7280",
-// };
 
 const STATUS_COLORS_LIGHT: Record<string, string> = {
   pending:          "#e67e00",
@@ -59,74 +48,63 @@ const ISO2_CENTROIDS: Record<string, [number, number]> = {
   RO:[45.94,24.96],RU:[61.52,105.31],SA:[23.88,45.07],SE:[60.12,18.64],SG:[1.35,103.81],
   TH:[15.87,100.99],TR:[38.96,35.24],TW:[23.69,120.96],UA:[48.37,31.16],US:[37.09,-95.71],
   VN:[14.05,108.27],ZA:[-28.47,24.67],RE:[-21.11,55.53],
+  MQ:[14.64,-61.02],GP:[16.26,-61.55],GF:[3.93,-53.12],YT:[-12.82,45.15],
+  NC:[-20.90,165.62],PF:[-17.68,-149.41],
   CDG:[49.0097,2.5479],PEK:[40.0799,116.6031],PVG:[31.1443,121.8083],
   HND:[35.5494,139.7798],NRT:[35.7647,140.3864],ICN:[37.4602,126.4407],DXB:[25.2532,55.3657],
   LHR:[51.4775,-0.4614],JFK:[40.6413,-73.7781],LAX:[33.9425,-118.4081],
   SIN:[1.3644,103.9915],HKG:[22.3080,113.9185],
   RUN:[-20.8872,55.5136],FRA:[50.0379,8.5622],CPT:[-33.9715,18.6021],
+  EWR:[40.6895,-74.1745],ORD:[41.9742,-87.9073],ATL:[33.6407,-84.4277],
+  MIA:[25.7959,-80.2870],SEA:[47.4502,-122.3088],BOS:[42.3656,-71.0096],
+  IAD:[38.9531,-77.4565],IAH:[29.9902,-95.3368],
+  AMS:[52.3086,4.7639],MAD:[40.4983,-3.5676],BCN:[41.2971,2.0785],
+  FCO:[41.8003,12.2389],MXP:[45.6306,8.7231],ZRH:[47.4647,8.5492],
+  BRU:[50.9010,4.4844],GRU:[-23.4356,-46.4731],EZE:[-34.8222,-58.5358],
+  BOG:[4.7016,-74.1469],MEX:[19.4363,-99.0721],
+  YYZ:[43.6777,-79.6248],YUL:[45.4706,-73.7408],YVR:[49.1967,-123.1815],
+  SYD:[-33.9461,151.1772],MEL:[-37.6690,144.8410],
+  JNB:[-26.1367,28.2411],CAI:[30.1219,31.4056],
+  IST:[41.2753,28.7519],SAW:[40.8985,29.3092],
+  DOH:[25.2731,51.6081],AUH:[24.4330,54.6511],
+  BKK:[13.6900,100.7501],KUL:[2.7456,101.7099],
+  MNL:[14.5086,121.0197],CGK:[-6.1256,106.6559],
+  DEL:[28.5562,77.1000],BOM:[19.0896,72.8656],BLR:[13.1986,77.7066],
+  VIE:[48.1103,16.5697],LIS:[38.7742,-9.1342],ARN:[59.6519,17.9186],
+  CPH:[55.6180,12.6508],HEL:[60.3172,24.9633],OSL:[60.1939,11.1004],
+  WAW:[52.1657,20.9671],PRG:[50.1008,14.2600],BUD:[47.4298,19.2611],
+  ATH:[37.9364,23.9444],NBO:[-1.3192,36.9275],LOS:[6.5774,3.3212],
+  ADD:[8.9779,38.7993],ACC:[5.6052,-0.1668],
+  GVA:[46.2380,6.1089],DUS:[51.2895,6.7668],HAM:[53.6304,10.0060],
+  NCE:[43.6584,7.2159],MRS:[43.4393,5.2214],LYS:[45.7256,5.0811],
+  MUC:[48.3538,11.7861],LGW:[51.1537,-0.1821],MAN:[53.3537,-2.2750],
+  LGA:[40.7772,-73.8726],SFO:[37.6213,-122.3790],DFW:[32.8998,-97.0403],
+  PKX:[39.5097,116.4105],SHA:[31.1979,121.3362],CAN:[23.3924,113.2988],
+  KIX:[34.4347,135.2440],FDF:[14.5910,-61.0032],PTP:[16.2653,-61.5272],
+  CAY:[4.8198,-52.3608],DZA:[-12.8047,45.2811],NOU:[-22.0146,166.2129],
+  PPT:[-17.5534,-149.6067],ORY:[48.7262,2.3652],
 };
 
 const ARC_ALTITUDE = 0.25;
 const LERP_POS     = 0.018;
 const LERP_HDG     = 0.06;
 
-// ============================================================
-// 🎨 DEMO 2 — BLOOM (lueur post-processing)
-// intensity : force de la lueur (0 = off, 3 = très fort)
-// threshold : luminosité min pour déclencher (0.1 = tout luit)
-// ============================================================
 const BLOOM = {
   dark:  { intensity: 3.0, threshold: 0.3, smoothing: 0.1 },
   light: { intensity: 0.5, threshold: 0.5, smoothing: 0.4 },
 };
-// Variante "cyberglitch" — décommentez :
-//const BLOOM = {
-//  dark:  { intensity: 3.0, threshold: 0.1, smoothing: 0.2 },
-//  light: { intensity: 1.2, threshold: 0.3, smoothing: 0.3 },
-//};
-// Variante bloom OFF :
-// const BLOOM = {
-//   dark:  { intensity: 0.0, threshold: 1.0, smoothing: 0.4 },
-//   light: { intensity: 0.0, threshold: 1.0, smoothing: 0.4 },
-// };
 
 const AMBIENT = {
   dark:  { intensity: 1.0 },
   light: { intensity: 0.8 },
 };
 
-// ============================================================
-// 🎨 DEMO 3 — LUMIÈRE DIRECTIONNELLE (soleil)
-// color : teinte de la lumière solaire (hex ou int 0xRRGGBB)
-// intensity : force (0 = nuit, 2 = surexposé)
-// ============================================================
 const DIRLIGHT = {
-  dark:  { color: 0xff9944, intensity: 0.8 },   // coucher de soleil orange
-  light: { color: 0xd4eeff, intensity: 1.1 },   // lumière froide du jour
+  dark:  { color: 0xff9944, intensity: 0.8 },
+  light: { color: 0xd4eeff, intensity: 1.1 },
 };
-// Variante lumière bleue froide :
-//const DIRLIGHT = {
-//  dark:  { color: 0x4488ff, intensity: 1.2 },
-//  light: { color: 0xffffff, intensity: 1.5 },
-//};
-// Variante lumière verte (hacker) :
-//const DIRLIGHT = {
-//  dark:  { color: 0x00ff88, intensity: 1.0 },
-//  light: { color: 0x88ff44, intensity: 0.9 },
-//};
 
-// ============================================================
-// 🎨 DEMO 4 — PALETTE DES HEXAGONES (continents)
-// En dark mode : palette unie par index de feature
-// En light mode : couleurs biome par latitude
-// ============================================================
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-// Variante "néon violet" :
-// const HEX_PALETTE_DARK = ["#9b59b6","#8e44ad","#6c3483","#a569bd","#7d3c98","#5b2c6f","#c39bd3","#d2b4de"];
-// Variante "matrix vert" :
-//const HEX_PALETTE_DARK = ["#003300","#006600","#009900","#00cc00","#00ff00","#33ff33","#66ff66","#004400"];
-// Variante monochrome froid :
-// const HEX_PALETTE_DARK = ["#1a2a3a","#1e3448","#223e56","#264864","#2a5272","#2e5c80","#32668e","#36709c"];
 
 async function fetchCountries(): Promise<any> {
   try {
@@ -229,6 +207,10 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
+/**
+ * Résout la position ACTUELLE du colis (point mobile / avion).
+ * N'est PAS utilisée pour les extrémités des arcs.
+ */
 function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
   const fp = flightPos[p.id];
   if (fp) {
@@ -243,21 +225,57 @@ function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat:
   return p.estimated_position ?? null;
 }
 
+/**
+ * Résout le point d'ORIGINE de l'arc (aéroport/ville de départ réel).
+ * Priorité : origin_coords (fourni par le backend) → centroïde ISO2.
+ */
+function resolveArcOrigin(p: Parcel): { lat: number; lng: number } | null {
+  if (p.origin_coords) return { lat: p.origin_coords.lat, lng: p.origin_coords.lng };
+  const c = getCentroid(p.origin_country);
+  return c ? { lat: c[0], lng: c[1] } : null;
+}
+
+/**
+ * Résout le point de DESTINATION de l'arc (aéroport/ville d'arrivée réel).
+ * Priorité : dest_coords (fourni par le backend) → centroïde ISO2.
+ */
+function resolveArcDest(p: Parcel): { lat: number; lng: number } | null {
+  if (p.dest_coords) return { lat: p.dest_coords.lat, lng: p.dest_coords.lng };
+  const c = getCentroid(p.dest_country);
+  return c ? { lat: c[0], lng: c[1] } : null;
+}
+
 function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+
+  // Points mobiles : position actuelle du colis
   const points = parcels.map(p => {
     const pos = resolveCurrentPosition(p, flightPositions);
     if (!pos) return null;
-    return { lat: pos.lat, lng: pos.lng, label: p.tracking_number, status: p.status, description: p.description, color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"), altitude: 0.02, radius: 0.4 };
+    return {
+      lat: pos.lat, lng: pos.lng,
+      label: p.tracking_number, status: p.status, description: p.description,
+      color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"),
+      altitude: 0.02, radius: 0.4,
+    };
   }).filter(Boolean);
+
+  // Arcs : origine réelle → destination réelle (PAS estimated_position)
   const arcs = parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
-      const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
+      const origin = resolveArcOrigin(p);
+      const dest   = resolveArcDest(p);
       if (!origin || !dest) return null;
-      return { startLat: origin[0], startLng: origin[1], endLat: dest.lat, endLng: dest.lng, color: SC[p.status] ?? "#ffffff", label: p.tracking_number };
+      return {
+        startLat: origin.lat, startLng: origin.lng,
+        endLat: dest.lat,   endLng: dest.lng,
+        color: SC[p.status] ?? "#ffffff",
+        label: p.tracking_number,
+      };
     }).filter(Boolean);
+
+  // Rings : autour de la position actuelle
   const rings = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -265,22 +283,25 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       if (!pos) return null;
       return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
     }).filter(Boolean);
+
+  // Transport (avions/camions) : se déplace entre origine et destination réelles
   const transport = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
+      const origin = resolveArcOrigin(p);
+      const dest   = resolveArcDest(p);
       if (!origin || !dest) return null;
       return {
         id: p.id,
-        startLat: origin[0], startLng: origin[1],
-        endLat: dest.lat, endLng: dest.lng,
+        startLat: origin.lat, startLng: origin.lng,
+        endLat: dest.lat,   endLng: dest.lng,
         color: SC[p.status] ?? "#fff",
         emoji: p.status === "out_for_delivery" ? "\uD83D\uDE9A" : "\u2708\uFE0F",
         _curLat: null as number | null, _curLng: null as number | null,
         _curAlt: null as number | null, _curHdg: null as number | null,
       };
     }).filter(Boolean);
+
   return { points, arcs, rings, transport };
 }
 
@@ -334,37 +355,12 @@ function applyHexColors(globe: any, isDark: boolean) {
   globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
 }
 
-// ============================================================
-// 🎨 DEMO 5 — COULEUR OCÉAN / FOND DU GLOBE
-// color    : couleur de base de la sphère (MeshPhong)
-// emissive : lueur propre (visible même sans lumière directe)
-// ============================================================
 const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
-const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };  // rouge très sombre = lave
-// Variante "globe bleu nuit" :
-// const OCEAN_DARK  = { color: "#00001a", emissive: "#000033" };
-// Variante "globe blanc" (light mode dramatique) :
-// const OCEAN_LIGHT = { color: "#e8f4fc", emissive: "#c0d8ee" };
-// Variante "globe noir total" :
-// const OCEAN_DARK  = { color: "#000000", emissive: "#000000" };
-
-// ============================================================
-// 🎨 DEMO 6 — ATMOSPHÈRE (halo autour du globe)
-// Changez la couleur passée à .atmosphereColor() dans applyTheme
-// et ajustez .atmosphereAltitude() dans l'init (cherchez 0.12)
-// Actuel dark: "#ff6600" (orange)
-//         light: "#4db8ff" (bleu ciel)
-// Variantes :
-//   "#00ffcc"  → cyan menthe
-//   "#ff00ff"  → magenta
-//   "#ffffff"  → halo blanc pur
-//   "#ffdd00"  → jaune solaire
-// ============================================================
+const OCEAN_DARK  = { color: "#0d0000", emissive: "#0a0000" };
 
 function applyTheme(globe: any, scene: THREE.Scene, isDark: boolean) {
   const ocean = isDark ? OCEAN_DARK : OCEAN_LIGHT;
   globe
-    // 🎨 DEMO 6 : changez la couleur ici ↓
     .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
     .globeMaterial(new THREE.MeshPhongMaterial({
       color:    new THREE.Color(ocean.color),
@@ -454,17 +450,8 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .width(containerRef.current!.clientWidth)
         .height(containerRef.current!.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
-        // -------------------------------------------------------
-        // 🎨 DEMO 7 — GRILLE (graticules lat/lng)
-        // true  = grille visible | false = grille cachée
-        // -------------------------------------------------------
         .showGraticules(true)
-        // 🎨 DEMO 6 — atmosphère (voir constante OCEAN_* plus haut)
         .atmosphereColor(isDark ? "#ff6600" : "#4db8ff")
-        // -------------------------------------------------------
-        // 🎨 DEMO 8 — ALTITUDE de l'atmosphère
-        // 0.05 = très ras | 0.25 = halo épais dramatique
-        // -------------------------------------------------------
         .atmosphereAltitude(0.12)
         .globeMaterial(new THREE.MeshPhongMaterial({
           color:    new THREE.Color(ocean.color),
@@ -472,21 +459,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
           transparent: true, opacity: 0.95,
         }))
         .hexPolygonsData(countries.features)
-        // -------------------------------------------------------
-        // 🎨 DEMO 9 — RÉSOLUTION des hexagones
-        // 2 = grosses tuiles | 3 = standard | 4 = très fin (lent)
-        // -------------------------------------------------------
         .hexPolygonResolution(3)
-        // -------------------------------------------------------
-        // 🎨 DEMO 10 — MARGE entre hexagones
-        // 0.0 = hexagones jointifs | 0.5 = très espacés
-        // -------------------------------------------------------
         .hexPolygonMargin(0.3)
         .hexPolygonColor((feat: any) => stableHexColor(feat, isDark))
-        // -------------------------------------------------------
-        // 🎨 DEMO 11 — ALTITUDE des hexagones (relief 3D)
-        // 0.0 = plat | 0.05 = relief subtil | 0.15 = très 3D
-        // -------------------------------------------------------
         .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
@@ -496,11 +471,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
       applyLighting(scene, isDark);
       setTimeout(() => applyLighting(scene, isDark), 200);
 
-      // -------------------------------------------------------
-      // 🎨 DEMO 12 — ROTATION AUTOMATIQUE
-      // autoRotate : true / false
-      // autoRotateSpeed : 0.3 lent | 1.5 rapide
-      // -------------------------------------------------------
       globe.controls().autoRotate = true;
       globe.controls().autoRotateSpeed = 0.6;
 
@@ -508,7 +478,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         scene.traverse((obj: any) => {
           if (obj.isLine || obj.isLineSegments) {
             if (obj.material) obj.material = new THREE.LineBasicMaterial({
-              // 🎨 DEMO 7 — couleur de la grille
               color: new THREE.Color(isDark ? "#993300" : "#0066bb"),
               transparent: true, opacity: 0.25,
             });
@@ -600,9 +569,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     };
   }, [globeRef]);
 
-  // 🎨 DEMO 13 — COULEUR DE FOND DE LA PAGE (derrière le globe)
-  // dark: "#0a0000" (rouge très sombre) | light: "#0d4f7a" (bleu nuit)
-  // Variantes dark : "#000000" | "#000a1a" | "#0a000f"
   const bgColor = theme === "dark" ? "#0a0000" : "#0d4f7a";
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
