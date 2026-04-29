@@ -87,7 +87,15 @@ IATA_META: dict[str, dict] = {
     "DEL": {"country": "IN", "lat":  28.5562, "lng":  77.1000, "name": "Delhi Indira Gandhi"},
     "BOM": {"country": "IN", "lat":  19.0896, "lng":  72.8656, "name": "Mumbai Chhatrapati Shivaji"},
     "BLR": {"country": "IN", "lat":  13.1986, "lng":  77.7066, "name": "Bangalore Kempegowda"},
+    # DOM-TOM / Outre-mer français
     "RUN": {"country": "RE", "lat": -20.8872, "lng":  55.5136, "name": "La Réunion Roland Garros"},
+    "FDF": {"country": "MQ", "lat":  14.5910, "lng": -61.0032, "name": "Fort-de-France Aimé Césaire (Martinique)"},
+    "PTP": {"country": "GP", "lat":  16.2653, "lng": -61.5272, "name": "Pointe-à-Pitre Guadeloupe"},
+    "CAY": {"country": "GF", "lat":   4.8198, "lng": -52.3608, "name": "Cayenne Félix Eboué (Guyane)"},
+    "DZA": {"country": "YT", "lat": -12.8047, "lng":  45.2811, "name": "Mayotte Dzaoudzi-Pamandzi"},
+    "NOU": {"country": "NC", "lat": -22.0146, "lng": 166.2129, "name": "Nouméa La Tontouta (Nouvelle-Calédonie)"},
+    "PPT": {"country": "PF", "lat": -17.5534, "lng":-149.6067, "name": "Papeete Faa'a (Polynésie française)"},
+    # Reste Europe
     "VIE": {"country": "AT", "lat":  48.1103, "lng":  16.5697, "name": "Vienna Intl"},
     "LIS": {"country": "PT", "lat":  38.7742, "lng":  -9.1342, "name": "Lisbon Humberto Delgado"},
     "ARN": {"country": "SE", "lat":  59.6519, "lng":  17.9186, "name": "Stockholm Arlanda"},
@@ -190,7 +198,11 @@ class Command(BaseCommand):
         return None
 
     def _create_parcel(self, owner, flight: dict, now) -> None:
-        """Crée un colis in_transit lié à un vol (comportement original)."""
+        """
+        Crée un colis in_transit lié à un vol.
+        - Si l'IATA est dans IATA_META : event avec coords précises
+        - Si l'IATA est INCONNU       : event créé quand même (sans coords) — pas de drop silencieux
+        """
         fn   = flight["flight_number"]
         orig = iata_meta(flight["origin_iata"])
         dest = iata_meta(flight["dest_iata"])
@@ -199,6 +211,15 @@ class Command(BaseCommand):
         dest_country   = (dest or {}).get("country", flight["dest_iata"])
         origin_name    = (orig or {}).get("name", flight["origin_iata"])
         dest_name      = (dest or {}).get("name", flight["dest_iata"])
+
+        if not orig:
+            self.stdout.write(
+                self.style.WARNING(f"  ⚠ IATA '{flight['origin_iata']}' inconnu — event départ sans coords")
+            )
+        if not dest:
+            self.stdout.write(
+                self.style.WARNING(f"  ⚠ IATA '{flight['dest_iata']}' inconnu — event arrivée sans coords")
+            )
 
         tracking_number = f"DEMO-LIVE-{fn}"
         Parcel.objects.filter(tracking_number=tracking_number).delete()
@@ -215,31 +236,33 @@ class Command(BaseCommand):
             last_synced_at=now,
         )
 
-        events = []
-        if orig:
-            events.append(TrackingEvent(
+        # Toujours 2 events — avec coords si IATA connu, sans coords sinon
+        events = [
+            TrackingEvent(
                 parcel=parcel,
                 timestamp=now - timezone.timedelta(hours=2),
                 location=origin_name,
-                latitude=orig["lat"],
-                longitude=orig["lng"],
+                latitude=orig["lat"] if orig else None,
+                longitude=orig["lng"] if orig else None,
                 status="in_transit",
                 description=f"Départ de {origin_name} sur le vol {fn}",
-            ))
-        if dest:
-            events.append(TrackingEvent(
+            ),
+            TrackingEvent(
                 parcel=parcel,
                 timestamp=now + timezone.timedelta(hours=8),
                 location=dest_name,
-                latitude=dest["lat"],
-                longitude=dest["lng"],
+                latitude=dest["lat"] if dest else None,
+                longitude=dest["lng"] if dest else None,
                 status="in_transit",
                 description=f"Arrivée prévue à {dest_name}",
-            ))
+            ),
+        ]
 
         TrackingEvent.objects.bulk_create(events)
+        n_geo = sum(1 for e in events if e.latitude is not None)
         self.stdout.write(self.style.SUCCESS(
-            f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events)} events)"
+            f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country})"
+            f" — vol {fn} (2 events, {n_geo} géocodé(s))"
         ))
 
     def _create_static_parcel(
@@ -253,8 +276,6 @@ class Command(BaseCommand):
         status: str,
         events_data: list[dict],
         now,
-        # Champs optionnels pour forcer la position persistée sur le modèle
-        # (contourne le fallback centroïde-pays du serializer)
         last_live_lat: float | None = None,
         last_live_lng: float | None = None,
         last_live_at=None,
@@ -428,8 +449,6 @@ class Command(BaseCommand):
 
         # ------------------------------------------------------------
         # 4. Delivered — livré à Manhattan, New York
-        # last_live_lat/lng forcés = position du dernier event
-        # → évite le fallback centroïde US (37.09, -95.71) du serializer
         # ------------------------------------------------------------
         delivered_lat = 40.7549
         delivered_lng = -73.9840
