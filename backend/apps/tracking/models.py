@@ -25,7 +25,7 @@ class Parcel(models.Model):
     flight_number   = models.CharField(max_length=20, blank=True, null=True,
                                        help_text="Ex: AF447, pour liaison FlightRadar")
 
-    # Dernière position live persistée (survit au reload et au redémarrage Django)
+    # Dernière position live persistée
     last_live_lat   = models.FloatField(null=True, blank=True)
     last_live_lng   = models.FloatField(null=True, blank=True)
     last_live_at    = models.DateTimeField(null=True, blank=True)
@@ -38,14 +38,33 @@ class Parcel(models.Model):
 
 
 class TrackingEvent(models.Model):
-    parcel      = models.ForeignKey(Parcel, related_name='events', on_delete=models.CASCADE)
-    timestamp   = models.DateTimeField()
-    location    = models.CharField(max_length=255, blank=True)
-    latitude    = models.FloatField(null=True, blank=True)
-    longitude   = models.FloatField(null=True, blank=True)
-    status      = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    raw_data    = models.JSONField(default=dict, blank=True)
+    class TransportMode(models.TextChoices):
+        AIR     = 'air',     'Aérien'
+        ROAD    = 'road',    'Terrestre'
+        SEA     = 'sea',     'Maritime'
+        UNKNOWN = 'unknown', 'Inconnu'
+
+    parcel         = models.ForeignKey(Parcel, related_name='events', on_delete=models.CASCADE)
+    timestamp      = models.DateTimeField()
+    location       = models.CharField(max_length=255, blank=True)
+    latitude       = models.FloatField(null=True, blank=True)
+    longitude      = models.FloatField(null=True, blank=True)
+    status         = models.CharField(max_length=100)
+    description    = models.TextField(blank=True)
+    raw_data       = models.JSONField(default=dict, blank=True)
+
+    # Étape 1 — extraction vol
+    flight_iata    = models.CharField(
+        max_length=10, blank=True, null=True,
+        help_text="Code IATA du vol extrait (ex: UA123, AF447)"
+    )
+    transport_mode = models.CharField(
+        max_length=20,
+        choices=TransportMode.choices,
+        default=TransportMode.UNKNOWN,
+        blank=True,
+        help_text="Mode de transport détecté pour cet événement"
+    )
 
     class Meta:
         ordering = ['-timestamp']
