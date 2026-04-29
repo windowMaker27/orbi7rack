@@ -108,6 +108,7 @@ IATA_META: dict[str, dict] = {
     "NCE": {"country": "FR", "lat":  43.6584, "lng":   7.2159, "name": "Nice Côte d'Azur"},
     "MRS": {"country": "FR", "lat":  43.4393, "lng":   5.2214, "name": "Marseille Provence"},
     "LYS": {"country": "FR", "lat":  45.7256, "lng":   5.0811, "name": "Lyon Saint-Exupéry"},
+    "FDF": {"country": "MQ", "lat": 14.5910, "lng": -61.0032, "name": "Fort-de-France Aimé Césaire"},
 }
 
 
@@ -163,7 +164,6 @@ class Command(BaseCommand):
         flight_number = parts[0].upper()
 
         if len(parts) == 3:
-            # Bypass direct — la route est explicitement fournie, pas d'appel API
             return {
                 "flight_number": flight_number,
                 "origin_iata":   parts[1].upper(),
@@ -242,16 +242,139 @@ class Command(BaseCommand):
             f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events)} events)"
         ))
 
-    # Vols longue distance — haute probabilité d'être en l'air
-    # Format : flight_number, origin_iata, dest_iata, airline
-    # Toujours utiliser le format bypass ici pour garantir la route souhaitée
+    def _create_parcel_with_events(self, owner, flight: dict, now, extra_events: list) -> None:
+        """
+        Variante de _create_parcel avec des events customisés (description libre).
+        Utilisé pour les colis de test du flight_extractor.
+        """
+        fn   = flight["flight_number"]
+        orig = iata_meta(flight["origin_iata"])
+        dest = iata_meta(flight["dest_iata"])
+
+        origin_country = (orig or {}).get("country", flight["origin_iata"])
+        dest_country   = (dest or {}).get("country", flight["dest_iata"])
+        origin_name    = (orig or {}).get("name", flight["origin_iata"])
+        dest_name      = (dest or {}).get("name", flight["dest_iata"])
+
+        tracking_number = f"DEMO-LIVE-{fn}"
+        Parcel.objects.filter(tracking_number=tracking_number).delete()
+
+        parcel = Parcel.objects.create(
+            owner=owner,
+            tracking_number=tracking_number,
+            carrier=flight.get("airline") or "Unknown Airline",
+            description=f"Colis démo lié au vol {fn} [LIVE]",
+            origin_country=origin_country,
+            dest_country=dest_country,
+            status="in_transit",
+            flight_number=fn,
+            last_synced_at=now,
+        )
+
+        events_to_create = []
+        for ev in extra_events:
+            events_to_create.append(TrackingEvent(
+                parcel=parcel,
+                timestamp=ev["timestamp"],
+                location=ev.get("location", ""),
+                latitude=ev.get("lat"),
+                longitude=ev.get("lng"),
+                status="in_transit",
+                description=ev["description"],
+            ))
+
+        TrackingEvent.objects.bulk_create(events_to_create)
+        self.stdout.write(self.style.SUCCESS(
+            f"✅ {tracking_number} — {origin_name} ({origin_country}) → {dest_name} ({dest_country}) — vol {fn} ({len(events_to_create)} events)"
+        ))
+        return parcel
+
+    # Vols longue distance hardcodés (format bypass garanti)
     HARDCODED = [
         {"flight_number": "AF011",  "origin_iata": "CDG", "dest_iata": "JFK", "airline": "Air France"},
         {"flight_number": "EK075",  "origin_iata": "DXB", "dest_iata": "LAX", "airline": "Emirates"},
         {"flight_number": "QR007",  "origin_iata": "DOH", "dest_iata": "JFK", "airline": "Qatar Airways"},
         {"flight_number": "SQ321",  "origin_iata": "SIN", "dest_iata": "LHR", "airline": "Singapore Airlines"},
         {"flight_number": "AI127",  "origin_iata": "VIE", "dest_iata": "ORD", "airline": "Air India"},
+        # ── Test flight_extractor — AF842 avec numéro explicite dans les events ──
+        {"flight_number": "AF842",  "origin_iata": "CDG", "dest_iata": "FDF", "airline": "Air France"},
     ]
+
+    def _seed_af842_extractor_test(self, owner, now) -> None:
+        """
+        Colis spécial AF842 : les events contiennent le numéro de vol dans leur
+        description pour valider que flight_extractor.extract_flight_number() le détecte.
+        """
+        orig = iata_meta("CDG")
+        dest = iata_meta("FDF")
+
+        tracking_number = "DEMO-LIVE-AF842"
+        Parcel.objects.filter(tracking_number=tracking_number).delete()
+
+        parcel = Parcel.objects.create(
+            owner=owner,
+            tracking_number=tracking_number,
+            carrier="Air France",
+            description="Colis démo lié au vol AF842 [LIVE]",
+            origin_country="FR",
+            dest_country="MQ",
+            status="in_transit",
+            flight_number="AF842",
+            last_synced_at=now,
+        )
+
+        # Events avec numéro de vol AF842 dans la description → doit être extrait par flight_extractor
+        raw_events = [
+            {
+                "timestamp": now - timezone.timedelta(hours=3),
+                "location": "Paris Charles de Gaulle, FR",
+                "lat": orig["lat"] if orig else None,
+                "lng": orig["lng"] if orig else None,
+                "description": "[CDG] Shipment departed on flight AF842 — Air France cargo terminal",
+            },
+            {
+                "timestamp": now - timezone.timedelta(hours=1),
+                "location": "Atlantic Ocean (en route)",
+                "lat": 48.5,
+                "lng": -30.0,
+                "description": "Vol AF842 en cours — altitude 35000ft, cap 270°",
+            },
+            {
+                "timestamp": now + timezone.timedelta(hours=5),
+                "location": "Fort-de-France, MQ",
+                "lat": dest["lat"] if dest else None,
+                "lng": dest["lng"] if dest else None,
+                "description": "Arrivée prévue à Fort-de-France AC — flight AF842",
+            },
+        ]
+
+        from apps.tracking.services.flight_extractor import enrich_event_flight
+
+        created_events = []
+        for ev in raw_events:
+            obj = TrackingEvent.objects.create(
+                parcel=parcel,
+                timestamp=ev["timestamp"],
+                location=ev["location"],
+                latitude=ev["lat"],
+                longitude=ev["lng"],
+                status="in_transit",
+                description=ev["description"],
+            )
+            enriched = enrich_event_flight(obj, carrier_name="Air France")
+            obj.save(update_fields=["flight_iata", "transport_mode"])
+            created_events.append((obj, enriched))
+
+        # Log résultats enrichissement
+        for obj, enriched in created_events:
+            marker = "✓" if enriched else "✗"
+            self.stdout.write(
+                f"  {marker} event#{obj.id} flight_iata={obj.flight_iata!r} mode={obj.transport_mode}"
+            )
+
+        self.stdout.write(self.style.SUCCESS(
+            f"✅ DEMO-LIVE-AF842 — Paris CDG (FR) → New York JFK (US) — vol AF842 ({len(raw_events)} events, extractor testé)"
+        ))
 
     def handle(self, *args, **options):
         User = get_user_model()
@@ -281,13 +404,20 @@ class Command(BaseCommand):
 
         if not tokens:
             self.stdout.write("[INFO] Aucun token fourni — utilisation des colis hardcodés.")
-            flights = self.HARDCODED
+            # Colis standard
+            for flight in self.HARDCODED[:-1]:  # tous sauf AF842 (géré à part)
+                self._create_parcel(owner, flight, now)
+            # Colis AF842 avec test flight_extractor intégré
+            self._seed_af842_extractor_test(owner, now)
         else:
             flights = [f for t in tokens if (f := self._resolve_flight(t)) is not None]
-
-        for flight in flights:
-            self._create_parcel(owner, flight, now)
+            for flight in flights:
+                self._create_parcel(owner, flight, now)
+            self.stdout.write(self.style.SUCCESS(
+                f"\nTerminé — {len(flights)} colis créé(s). Owner: {owner.username}"
+            ))
+            return
 
         self.stdout.write(self.style.SUCCESS(
-            f"\nTerminé — {len(flights)} colis créé(s). Owner: {owner.username}"
+            f"\nTerminé — {len(self.HARDCODED)} colis créé(s). Owner: {owner.username}"
         ))
