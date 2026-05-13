@@ -3,15 +3,15 @@ seed_demo.py — Crée des colis de démo avec events géocodés et SimulationEn
 
 Usage (depuis /backend) :
   docker compose exec backend python scripts/seed_demo.py
-  # ou
-  python scripts/seed_demo.py   (avec DJANGO_SETTINGS_MODULE positionné)
+  docker compose exec backend python scripts/seed_demo.py --username monuser
+  python scripts/seed_demo.py --username monuser
 
-Crée (ou récupère) un user demo, puis 3 colis avec events géocodés
-variés : un en transit CN→FR, un livré DE→FR, un livré KR→FR.
-Appelle compute_parcel_simulation() après chaque création.
+Sans --username : crée/utilise le user 'demo' (password: demo1234).
+Avec --username  : attache les colis au user existant spécifié.
 """
 import os
 import sys
+import argparse
 import django
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from apps.tracking.models import Parcel, TrackingEvent
 from apps.tracking.services.simulation_engine import compute_parcel_simulation
 
 User = get_user_model()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -115,31 +116,45 @@ DEMO_PARCELS = [
 # Main
 # ---------------------------------------------------------------------------
 
-def run():
-    user, created = User.objects.get_or_create(
-        username="demo",
-        defaults={"email": "demo@orbi7rack.local"},
-    )
-    if created:
-        user.set_password("demo1234")
-        user.save()
-        print("[seed] User 'demo' créé (password: demo1234)")
+def run(target_username: str | None = None):
+    if target_username:
+        # Attache les colis au user existant
+        try:
+            user = User.objects.get(username=target_username)
+            print(f"[seed] User '{target_username}' trouvé (id={user.pk})")
+        except User.DoesNotExist:
+            print(f"[seed] ERREUR : user '{target_username}' introuvable. Annulation.")
+            sys.exit(1)
     else:
-        print("[seed] User 'demo' existant")
+        # Crée/récupère le user demo par défaut
+        user, created = User.objects.get_or_create(
+            username="demo",
+            defaults={"email": "demo@orbi7rack.local"},
+        )
+        if created:
+            user.set_password("demo1234")
+            user.save()
+            print("[seed] User 'demo' créé (password: demo1234)")
+        else:
+            print("[seed] User 'demo' existant")
 
     for data in DEMO_PARCELS:
         events_data = data.pop("events")
 
-        parcel, p_created = Parcel.objects.get_or_create(
-            tracking_number=data["tracking_number"],
-            defaults={**data, "owner": user},
-        )
-        if not p_created:
-            print(f"[seed] {parcel.tracking_number} déjà existant, skip")
+        # Si le colis existe déjà pour un autre owner, on le re-seed pour cet owner
+        existing = Parcel.objects.filter(tracking_number=data["tracking_number"]).first()
+        if existing and existing.owner == user:
+            print(f"[seed] {data['tracking_number']} déjà existant pour '{user.username}', skip")
             data["events"] = events_data
             continue
 
-        print(f"[seed] Création {parcel.tracking_number}...")
+        # Supprime l'ancien si owner différent (re-seed propre)
+        if existing:
+            print(f"[seed] {data['tracking_number']} existe pour un autre owner, suppression...")
+            existing.delete()
+
+        parcel = Parcel.objects.create(**data, owner=user)
+        print(f"[seed] Création {parcel.tracking_number} pour '{user.username}'...")
 
         for ev_data in events_data:
             make_event(parcel=parcel, **ev_data)
@@ -153,4 +168,12 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Seed colis de démo Orbi7rack")
+    parser.add_argument(
+        "--username",
+        type=str,
+        default=None,
+        help="Username du compte auquel attacher les colis (défaut: user 'demo')",
+    )
+    args = parser.parse_args()
+    run(target_username=args.username)

@@ -202,15 +202,23 @@ function resolveOrigin(p: Parcel): [number, number] | null {
   return getCentroid(p.origin_country);
 }
 
-/** Résout le point d'arrivée d'un arc :
+/** Résout le point d'arrivée d'un arc — chaîne de fallbacks :
  *  1. dest_coords de l'API (dernier event géocodé côté destination)
- *  2. estimated_position en fallback
+ *  2. estimated_position (SimEngine ou dernier event connu)
+ *  3. centroïde ISO2 dest_country
  */
 function resolveDest(p: Parcel): { lat: number; lng: number } | null {
   if (p.dest_coords?.lat != null && p.dest_coords?.lng != null) {
     return { lat: p.dest_coords.lat, lng: p.dest_coords.lng };
   }
-  return p.estimated_position ?? null;
+  // Fallback : estimated_position (comportement pré-commit, couvre les colis
+  // avec un seul event géocodé comme CNFR9010519938925HD)
+  if (p.estimated_position?.lat != null && p.estimated_position?.lng != null) {
+    return { lat: p.estimated_position.lat, lng: p.estimated_position.lng };
+  }
+  // Dernier recours : centroïde pays destination
+  const c = getCentroid(p.dest_country);
+  return c ? { lat: c[0], lng: c[1] } : null;
 }
 
 function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
