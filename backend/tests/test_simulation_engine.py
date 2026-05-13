@@ -203,10 +203,9 @@ class TestGetCurrentSimulatedPosition:
         )
         result = get_current_simulated_position(parcel)
         assert result is not None
-        # Le moteur clampe à 0.05 minimum (not-yet-departed)  — jamais 0.0 par design
         assert result["progress"] <= 0.1
         assert result["lat"] == pytest.approx(31.23)
-        assert result["lng"] == pytest.approx(31.23, abs=30)  # point de départ
+        assert result["lng"] == pytest.approx(121.47)  # Shanghai longitude
 
     def test_progress_is_global(self, parcel_with_events):
         compute_parcel_simulation(parcel_with_events)
