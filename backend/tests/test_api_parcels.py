@@ -3,7 +3,6 @@ Tests API — endpoints /api/parcels/ et /api/parcels/{id}/events/
 """
 import pytest
 from unittest.mock import patch, MagicMock
-from django.urls import reverse
 from apps.tracking.models import Parcel, TrackingEvent
 
 
@@ -14,18 +13,15 @@ from apps.tracking.models import Parcel, TrackingEvent
 @pytest.mark.django_db
 class TestParcelList:
     def test_list_requires_auth(self, client):
-        """Sans token → 401."""
         response = client.get("/api/parcels/")
         assert response.status_code == 401
 
     def test_list_empty(self, auth_client):
-        """Utilisateur sans colis → liste vide."""
         response = auth_client.get("/api/parcels/")
         assert response.status_code == 200
         assert response.data["results"] == []
 
     def test_list_returns_own_parcels_only(self, auth_client, parcel, db, user):
-        """N'expose que les colis du user authentifié."""
         from django.contrib.auth import get_user_model
         other_user = get_user_model().objects.create_user(
             username="other", password="pass", email="other@test.com"
@@ -42,7 +38,6 @@ class TestParcelList:
         assert "OTHER123" not in tracking_numbers
 
     def test_list_parcel_fields(self, auth_client, parcel_with_events):
-        """Vérifie la présence des champs clés dans la réponse."""
         response = auth_client.get("/api/parcels/")
         assert response.status_code == 200
         item = response.data["results"][0]
@@ -52,7 +47,6 @@ class TestParcelList:
             assert field in item, f"Champ manquant : {field}"
 
     def test_list_origin_coords_present(self, auth_client, parcel_with_events):
-        """origin_coords doit être non-null quand le colis a des events géocodés."""
         response = auth_client.get("/api/parcels/")
         item = response.data["results"][0]
         assert item["origin_coords"] is not None
@@ -60,16 +54,14 @@ class TestParcelList:
         assert "lng" in item["origin_coords"]
 
     def test_list_dest_coords_present(self, auth_client, parcel_with_events):
-        """dest_coords doit être non-null."""
         response = auth_client.get("/api/parcels/")
         item = response.data["results"][0]
         assert item["dest_coords"] is not None
 
     def test_list_dest_coords_fallback_prefix(self, auth_client, parcel):
-        """Sans events géocodés, dest_coords doit fallback sur le préfixe CNFR → FR centroid."""
+        """Sans events géocodés, dest_coords doit fallback sur CNFR → FR centroid."""
         response = auth_client.get("/api/parcels/")
         item = response.data["results"][0]
-        # CNFR → France centroid attendu
         assert item["dest_coords"] is not None
         dest = item["dest_coords"]
         assert abs(dest["lat"] - 46.22) < 1.0
@@ -101,10 +93,8 @@ class TestParcelDetail:
         assert response.status_code == 404
 
     def test_estimated_position_with_events(self, auth_client, parcel_with_events):
-        """Avec events simulated=True, estimated_position doit retourner lat/lng/progress."""
         from apps.tracking.services.simulation_engine import compute_parcel_simulation
         compute_parcel_simulation(parcel_with_events)
-
         response = auth_client.get(f"/api/parcels/{parcel_with_events.id}/")
         pos = response.data["estimated_position"]
         assert pos is not None
@@ -114,10 +104,8 @@ class TestParcelDetail:
         assert 0.0 <= pos["progress"] <= 1.0
 
     def test_estimated_position_no_events_fallback(self, auth_client, parcel):
-        """Sans events géocodés → estimated_position utilise le centroïde."""
         response = auth_client.get(f"/api/parcels/{parcel.id}/")
         pos = response.data["estimated_position"]
-        # Doit avoir une position (centroïde CN ou fallback)
         assert pos is not None
 
 
@@ -153,7 +141,7 @@ class TestParcelEvents:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/parcels/ (création avec mock 17track)
+# POST /api/parcels/
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
@@ -164,18 +152,13 @@ class TestParcelCreate:
                 "accepted": [{
                     "number": tracking_number,
                     "track": {
-                        "e": 10,
-                        "b": 100,
-                        "d": 203,
-                        "w1": "La Poste",
-                        "z1": [
-                            {
-                                "a": "2026-05-01 10:00:00",
-                                "z": "Departed from Shanghai",
-                                "c": "Shanghai",
-                                "d": "CN",
-                            }
-                        ],
+                        "e": 10, "b": 100, "d": 203, "w1": "La Poste",
+                        "z1": [{
+                            "a": "2026-05-01 10:00:00",
+                            "z": "Departed from Shanghai",
+                            "c": "Shanghai",
+                            "d": "CN",
+                        }],
                     }
                 }]
             }
@@ -189,8 +172,8 @@ class TestParcelCreate:
         mock_instance.get_track_info.return_value = self._mock_payload(tracking_number)
         MockClient.return_value = mock_instance
 
-        # Mock geocode pour éviter les appels réseau
-        with patch("apps.tracking.tasks.geocode_location", return_value=(31.23, 121.47)):
+        # Patcher geocode_location là où il est importé dans tasks.py
+        with patch("apps.tracking.services.geocoding.geocode_location", return_value=(31.23, 121.47)):
             response = auth_client.post("/api/parcels/", {
                 "tracking_number": tracking_number,
                 "description": "Test colis",
@@ -203,12 +186,10 @@ class TestParcelCreate:
 
     @patch("apps.api.views.SeventeentrackClient")
     def test_create_duplicate_returns_400(self, MockClient, auth_client, parcel):
-        """Même tracking number → erreur unique constraint."""
         mock_instance = MagicMock()
         mock_instance.register.return_value = None
         mock_instance.get_track_info.return_value = self._mock_payload(parcel.tracking_number)
         MockClient.return_value = mock_instance
-
         response = auth_client.post("/api/parcels/", {
             "tracking_number": parcel.tracking_number,
         })
