@@ -20,11 +20,22 @@ ISO2_CENTROIDS = {
     "MA": (31.79, -7.09), "MX": (23.63, -102.55), "MY": (4.21, 101.97),
     "NG": (9.08, 8.67), "NL": (52.13, 5.29), "NO": (60.47, 8.46),
     "NZ": (-40.90, 174.88), "PH": (12.87, 121.77), "PK": (30.37, 69.34),
-    "PL": (51.91, 19.14), "PT": (39.39, -8.22), "RO": (45.94, 24.96),
-    "RU": (61.52, 105.31), "SA": (23.88, 45.07), "SE": (60.12, 18.64),
-    "SG": (1.35, 103.81), "SK": (48.66, 19.69), "TH": (15.87, 100.99),
-    "TR": (38.96, 35.24), "TW": (23.69, 120.96), "UA": (48.37, 31.16),
-    "US": (37.09, -95.71), "VN": (14.05, 108.27), "ZA": (-28.47, 24.67),
+    "PL": (51.91, 19.14), "PT": (39.39, -8.22), "RE": (-21.11, 55.53),
+    "RO": (45.94, 24.96), "RU": (61.52, 105.31), "SA": (23.88, 45.07),
+    "SE": (60.12, 18.64), "SG": (1.35, 103.81), "SK": (48.66, 19.69),
+    "TH": (15.87, 100.99), "TR": (38.96, 35.24), "TW": (23.69, 120.96),
+    "UA": (48.37, 31.16), "US": (37.09, -95.71), "VN": (14.05, 108.27),
+    "ZA": (-28.47, 24.67),
+}
+
+# Préfixes de tracking number → pays destination
+# Ex: CNFR → China→France, CNDE → China→Germany
+_TRACKING_PREFIX_DEST = {
+    "CNFR": "FR", "CNDE": "DE", "CNGB": "GB", "CNUS": "US",
+    "CNPL": "PL", "CNNL": "NL", "CNES": "ES", "CNIT": "IT",
+    "CNBE": "BE", "CNPT": "PT", "CNSE": "SE", "CNCH": "CH",
+    "CNAT": "AT", "CNCA": "CA", "CNAU": "AU", "CNJP": "JP",
+    "CNKR": "KR", "CNSG": "SG", "CNHK": "HK",
 }
 
 
@@ -32,6 +43,17 @@ def get_centroid(country_code: str):
     if not country_code:
         return None
     return ISO2_CENTROIDS.get(country_code.upper())
+
+
+def _resolve_dest_country(obj) -> str:
+    """Retourne le code pays destination, en fallback sur le préfixe du tracking number."""
+    if obj.dest_country:
+        return obj.dest_country.upper()
+    tn = (obj.tracking_number or "").upper()
+    for prefix, country in _TRACKING_PREFIX_DEST.items():
+        if tn.startswith(prefix):
+            return country
+    return ""
 
 
 class TrackingEventSerializer(serializers.ModelSerializer):
@@ -87,11 +109,17 @@ class ParcelSerializer(serializers.ModelSerializer):
         ]
 
     def _geo_events(self, obj):
-        """Events géocodés triés ASC."""
-        return [
+        """Events géocodés triés ASC, dédupliqués par (lat, lng) consécutifs."""
+        raw = [
             e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
             if e.latitude is not None and e.longitude is not None
         ]
+        # Déduplication : on ignore les events consécutifs avec exactement les mêmes coords
+        deduped = []
+        for e in raw:
+            if not deduped or (e.latitude, e.longitude) != (deduped[-1].latitude, deduped[-1].longitude):
+                deduped.append(e)
+        return deduped
 
     def get_origin_coords(self, obj):
         geo = self._geo_events(obj)
@@ -104,23 +132,28 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_dest_coords(self, obj):
-        """Retourne les coordonnées de la VRAIE destination finale.
-        On prend le dernier event géocodé — s'il n'y en a qu'un ou si
-        le colis est livré → centroïde dest_country.
+        """Coordonnées destination — chaîne de fallbacks robuste :
+        1. Dernier event géocodé distinct (dédupliqué) si ≥2 events distincts
+        2. Centroïde dest_country (ou pays résolu via préfixe tracking number)
+        3. Seul event géocodé disponible
         """
         geo = self._geo_events(obj)
+
         if len(geo) >= 2:
-            # Dernier event géocodé = destination connue
             e = geo[-1]
             return {"lat": e.latitude, "lng": e.longitude, "source": "event"}
-        # Fallback centroïde dest_country (plus fiable que le 1er event seul)
-        pos = get_centroid(obj.dest_country)
+
+        # Fallback pays : dest_country ou préfixe tracking number
+        dest_country = _resolve_dest_country(obj)
+        pos = get_centroid(dest_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "centroid"}
-        # Dernier recours : seul event dispo
+
+        # Dernier recours : seul event disponible
         if geo:
             e = geo[-1]
             return {"lat": e.latitude, "lng": e.longitude, "source": "event_single"}
+
         return None
 
     def get_estimated_position(self, obj):
@@ -147,7 +180,8 @@ class ParcelSerializer(serializers.ModelSerializer):
 
         # 2. Delivered
         if obj.status == Parcel.Status.DELIVERED:
-            pos = get_centroid(obj.dest_country)
+            dest_country = _resolve_dest_country(obj)
+            pos = get_centroid(dest_country)
             if pos:
                 return {"lat": pos[0], "lng": pos[1], "source": "dest_country", "progress": 1.0}
 
