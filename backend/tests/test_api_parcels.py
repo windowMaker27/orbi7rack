@@ -110,42 +110,25 @@ class TestParcelDetail:
 
 
 # ---------------------------------------------------------------------------
-# PATCH /api/parcels/{id}/
+# PATCH /api/parcels/{id}/ — non supporté (UpdateModelMixin absent du ViewSet)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-class TestParcelUpdate:
-    def test_patch_description(self, auth_client, parcel):
+class TestParcelUpdateNotSupported:
+    """Le ViewSet n'inclut pas UpdateModelMixin → PATCH retourne 405 par design."""
+
+    def test_patch_returns_405(self, auth_client, parcel):
         response = auth_client.patch(f"/api/parcels/{parcel.id}/", {
             "description": "Nouvelle description"
         })
-        assert response.status_code == 200
-        parcel.refresh_from_db()
-        assert parcel.description == "Nouvelle description"
+        assert response.status_code == 405
 
-    def test_patch_cannot_change_status(self, auth_client, parcel):
-        """status est read_only : un PATCH dessus doit être ignoré."""
-        response = auth_client.patch(f"/api/parcels/{parcel.id}/", {
-            "status": "delivered"
+    def test_put_returns_405(self, auth_client, parcel):
+        response = auth_client.put(f"/api/parcels/{parcel.id}/", {
+            "tracking_number": parcel.tracking_number,
+            "description": "Full update",
         })
-        assert response.status_code == 200
-        parcel.refresh_from_db()
-        assert parcel.status == Parcel.Status.IN_TRANSIT  # inchangé
-
-    def test_patch_other_user_parcel_returns_404(self, auth_client, db):
-        from django.contrib.auth import get_user_model
-        other = get_user_model().objects.create_user(
-            username="other_patch", password="pass", email="op@test.com"
-        )
-        other_parcel = Parcel.objects.create(
-            tracking_number="CNFR_OTHER_PATCH",
-            owner=other,
-            status=Parcel.Status.PENDING,
-        )
-        response = auth_client.patch(f"/api/parcels/{other_parcel.id}/", {
-            "description": "hack"
-        })
-        assert response.status_code == 404
+        assert response.status_code == 405
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +161,7 @@ class TestParcelDelete:
         )
         response = auth_client.delete(f"/api/parcels/{other_parcel.id}/")
         assert response.status_code == 404
-        assert Parcel.objects.filter(id=other_parcel.id).exists()  # toujours là
+        assert Parcel.objects.filter(id=other_parcel.id).exists()
 
 
 # ---------------------------------------------------------------------------

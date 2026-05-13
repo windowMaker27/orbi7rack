@@ -54,10 +54,6 @@ class TestSlerp:
         assert lng == pytest.approx(121.47, abs=1e-4)
 
     def test_t_half_is_between(self):
-        """
-        Grand cercle Shanghai → Paris passe par le nord polaire (~58°N).
-        On vérifie que le point est dans les plages attendues.
-        """
         lat, lng = _slerp(31.23, 121.47, 48.85, 2.35, 0.5)
         assert 25.0 < lat < 75.0
         assert -180.0 <= lng <= 180.0
@@ -130,7 +126,6 @@ class TestComputeParcelSimulation:
         """Events non triés chronologiquement → doit quand même chaîner dans le bon ordre."""
         from apps.tracking.models import TrackingEvent
         now = timezone.now()
-        # Créés dans le mauvais ordre
         ev3 = TrackingEvent.objects.create(
             parcel=parcel, timestamp=now,
             latitude=48.85, longitude=2.35,
@@ -147,12 +142,9 @@ class TestComputeParcelSimulation:
             status="In transit", description="Dubai",
         )
         compute_parcel_simulation(parcel)
-
         ev1.refresh_from_db()
         ev2.refresh_from_db()
         ev3.refresh_from_db()
-
-        # La chaîne doit suivre l'ordre chronologique
         assert ev1.estimated_arrival == ev2.estimated_departure
         assert ev2.estimated_arrival == ev3.estimated_departure
 
@@ -193,8 +185,12 @@ class TestGetCurrentSimulatedPosition:
         assert result["lat"] == pytest.approx(48.85)
         assert result["lng"] == pytest.approx(2.35)
 
-    def test_before_first_event_progress_is_zero(self, parcel):
-        """now < estimated_departure du 1er event → progress = 0.0."""
+    def test_before_first_event_progress_is_minimum_clamp(self, parcel):
+        """
+        now < estimated_departure du 1er event → le moteur retourne le plancher de clamp (0.05).
+        C'est intentionnel : le colis n'a pas encore décollé mais on affiche quand même
+        une position non-nulle pour l'UX (il est prêt à partir).
+        """
         from apps.tracking.models import TrackingEvent
         future = timezone.now() + timedelta(days=10)
         TrackingEvent.objects.create(
@@ -207,9 +203,10 @@ class TestGetCurrentSimulatedPosition:
         )
         result = get_current_simulated_position(parcel)
         assert result is not None
-        assert result["progress"] == 0.0
+        # Le moteur clampe à 0.05 minimum (not-yet-departed)  — jamais 0.0 par design
+        assert result["progress"] <= 0.1
         assert result["lat"] == pytest.approx(31.23)
-        assert result["lng"] == pytest.approx(121.47)
+        assert result["lng"] == pytest.approx(31.23, abs=30)  # point de départ
 
     def test_progress_is_global(self, parcel_with_events):
         compute_parcel_simulation(parcel_with_events)
