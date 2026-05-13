@@ -87,6 +87,8 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
     carrier_iata_prefix = _resolve_carrier_iata(parcel.carrier or "")
 
     events = track.get("z1", []) or []
+    created_event_ids = []
+
     for event in events:
         print("RAW EVENT:", event)
         timestamp   = parse_17track_datetime(event.get("a"))
@@ -113,17 +115,21 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
             enrich_event_flight(
                 event_obj,
                 carrier_name=parcel.carrier or "",
-                # dep/arr IATA non disponibles depuis 17track directement
-                # → seront résolus plus tard via geocoding si besoin
             )
             event_obj.save(update_fields=["flight_iata", "transport_mode"])
 
             if location:
-                geocode_event.delay(event_obj.id)
+                created_event_ids.append(event_obj.id)
 
         # Propager le premier vol trouvé sur le colis (flight_number)
         if event_obj.flight_iata and not parcel.flight_number:
             parcel.flight_number = event_obj.flight_iata
             parcel.save(update_fields=["flight_number"])
+
+    # Chaîne asynchrone : geocodage → simulation pour chaque event créé
+    # On importe ici pour éviter les imports circulaires
+    from apps.tracking.tasks import geocode_event_then_simulate
+    for event_id in created_event_ids:
+        geocode_event_then_simulate.delay(event_id)
 
     return parcel

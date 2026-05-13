@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 
 from apps.tracking.models import Parcel, TrackingEvent
 
@@ -28,7 +29,6 @@ ISO2_CENTROIDS = {
 
 
 def get_centroid(country_code: str):
-    """Retourne (lat, lng) pour un code ISO2, ou None si inconnu."""
     if not country_code:
         return None
     return ISO2_CENTROIDS.get(country_code.upper())
@@ -45,6 +45,11 @@ class TrackingEventSerializer(serializers.ModelSerializer):
             "longitude",
             "status",
             "description",
+            "transport_mode",
+            "flight_iata",
+            "estimated_departure",
+            "estimated_arrival",
+            "simulated",
         ]
 
 
@@ -82,18 +87,13 @@ class ParcelSerializer(serializers.ModelSerializer):
         ]
 
     def _geo_events(self, obj):
-        """Events géocodés triés par timestamp ASC (du plus ancien au plus récent)."""
+        """Events géocodés triés ASC."""
         return [
             e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
             if e.latitude is not None and e.longitude is not None
         ]
 
     def get_origin_coords(self, obj):
-        """
-        Coordonnées précises de l'origine :
-        1. Premier TrackingEvent géocodé (aéroport de départ)
-        2. Fallback → centroïde origin_country
-        """
         geo = self._geo_events(obj)
         if geo:
             e = geo[0]
@@ -104,42 +104,70 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_dest_coords(self, obj):
-        """
-        Coordonnées précises de la destination :
-        1. Dernier TrackingEvent géocodé (aéroport d'arrivée)
-        2. Fallback → centroïde dest_country
+        """Retourne les coordonnées de la VRAIE destination finale.
+        On prend le dernier event géocodé — s'il n'y en a qu'un ou si
+        le colis est livré → centroïde dest_country.
         """
         geo = self._geo_events(obj)
-        if geo:
+        if len(geo) >= 2:
+            # Dernier event géocodé = destination connue
             e = geo[-1]
             return {"lat": e.latitude, "lng": e.longitude, "source": "event"}
+        # Fallback centroïde dest_country (plus fiable que le 1er event seul)
         pos = get_centroid(obj.dest_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "centroid"}
+        # Dernier recours : seul event dispo
+        if geo:
+            e = geo[-1]
+            return {"lat": e.latitude, "lng": e.longitude, "source": "event_single"}
         return None
 
     def get_estimated_position(self, obj):
         """
-        Retourne {lat, lng, source} selon la priorité :
-        1. Colis delivered → centroïde dest_country
-        2. Dernier event avec coordonnées (in_transit)
-        3. Fallback → centroïde origin_country
+        Priorité :
+        1. SimulationEngine (segments temporels avec slerp) — si des events simulated=True existent
+        2. Colis delivered → centroïde dest_country
+        3. Dernier event géocodé (statique)
+        4. Centroïde origin_country
         """
+        # 1. SimulationEngine
+        simulated_events = [
+            e for e in obj.events.all()
+            if getattr(e, 'simulated', False) and e.latitude is not None
+        ]
+        if simulated_events:
+            try:
+                from apps.tracking.services.simulation_engine import get_current_simulated_position
+                result = get_current_simulated_position(obj)
+                if result:
+                    return result
+            except Exception:
+                pass
+
+        # 2. Delivered
         if obj.status == Parcel.Status.DELIVERED:
             pos = get_centroid(obj.dest_country)
             if pos:
-                return {"lat": pos[0], "lng": pos[1], "source": "dest_country"}
+                return {"lat": pos[0], "lng": pos[1], "source": "dest_country", "progress": 1.0}
 
+        # 3. Dernier event géocodé
         geo_event = next(
             (e for e in obj.events.all() if e.latitude is not None and e.longitude is not None),
             None
         )
         if geo_event:
-            return {"lat": geo_event.latitude, "lng": geo_event.longitude, "source": "last_event"}
+            return {
+                "lat": geo_event.latitude,
+                "lng": geo_event.longitude,
+                "source": "last_event",
+                "progress": None,
+            }
 
+        # 4. Centroïde origin
         pos = get_centroid(obj.origin_country)
         if pos:
-            return {"lat": pos[0], "lng": pos[1], "source": "origin_country"}
+            return {"lat": pos[0], "lng": pos[1], "source": "origin_country", "progress": 0.0}
 
         return None
 

@@ -66,6 +66,20 @@ class TrackingEvent(models.Model):
         help_text="Mode de transport détecté pour cet événement"
     )
 
+    # Étape 2 — SimulationEngine
+    estimated_departure = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Timestamp de départ estimé du segment (= timestamp de cet event)"
+    )
+    estimated_arrival = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Timestamp d'arrivée estimé du segment (= timestamp du prochain event)"
+    )
+    simulated = models.BooleanField(
+        default=False,
+        help_text="True si le SimulationEngine a calculé ce segment"
+    )
+
     class Meta:
         ordering = ['-timestamp']
 

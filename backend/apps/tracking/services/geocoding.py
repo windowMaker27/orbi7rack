@@ -57,10 +57,11 @@ COUNTRY_CODES_17TRACK = {
     502: ("EG", 26.82, 30.80, "Égypte"),
     503: ("MA", 31.79, -7.09, "Maroc"),
     600: ("CA", 56.13, -106.34, "Canada"),
-    605: ("FR", 46.22, 2.21, "France"),  # code alternatif FR
+    605: ("FR", 46.22, 2.21, "France"),
 }
 
 _geolocator = Nominatim(user_agent="orbi7rack-tracker", timeout=5)
+
 
 def country_code_to_iso(code_17track: int) -> tuple:
     """Retourne (iso2, lat, lng, nom) depuis un code 17Track."""
@@ -68,6 +69,7 @@ def country_code_to_iso(code_17track: int) -> tuple:
         return COUNTRY_CODES_17TRACK.get(int(code_17track), ("", None, None, ""))
     except (ValueError, TypeError):
         return ("", None, None, "")
+
 
 def geocode_location(location_str: str, retries: int = 2) -> tuple:
     """
@@ -92,8 +94,10 @@ def geocode_location(location_str: str, retries: int = 2) -> tuple:
 
     return (None, None)
 
+
 @shared_task
 def geocode_event(event_id: int):
+    """Legacy — conservé pour compatibilité. Préférer geocode_event_then_simulate."""
     try:
         event = TrackingEvent.objects.get(id=event_id)
         if event.location and not event.latitude:
