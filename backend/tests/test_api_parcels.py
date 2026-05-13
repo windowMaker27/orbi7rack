@@ -1,5 +1,5 @@
 """
-Tests API — endpoints /api/parcels/ et /api/parcels/{id}/events/
+Tests API — endpoints /api/parcels/
 """
 import pytest
 from unittest.mock import patch, MagicMock
@@ -110,6 +110,78 @@ class TestParcelDetail:
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/parcels/{id}/
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestParcelUpdate:
+    def test_patch_description(self, auth_client, parcel):
+        response = auth_client.patch(f"/api/parcels/{parcel.id}/", {
+            "description": "Nouvelle description"
+        })
+        assert response.status_code == 200
+        parcel.refresh_from_db()
+        assert parcel.description == "Nouvelle description"
+
+    def test_patch_cannot_change_status(self, auth_client, parcel):
+        """status est read_only : un PATCH dessus doit être ignoré."""
+        response = auth_client.patch(f"/api/parcels/{parcel.id}/", {
+            "status": "delivered"
+        })
+        assert response.status_code == 200
+        parcel.refresh_from_db()
+        assert parcel.status == Parcel.Status.IN_TRANSIT  # inchangé
+
+    def test_patch_other_user_parcel_returns_404(self, auth_client, db):
+        from django.contrib.auth import get_user_model
+        other = get_user_model().objects.create_user(
+            username="other_patch", password="pass", email="op@test.com"
+        )
+        other_parcel = Parcel.objects.create(
+            tracking_number="CNFR_OTHER_PATCH",
+            owner=other,
+            status=Parcel.Status.PENDING,
+        )
+        response = auth_client.patch(f"/api/parcels/{other_parcel.id}/", {
+            "description": "hack"
+        })
+        assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/parcels/{id}/
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestParcelDelete:
+    def test_delete_own_parcel(self, auth_client, parcel):
+        parcel_id = parcel.id
+        response = auth_client.delete(f"/api/parcels/{parcel_id}/")
+        assert response.status_code == 204
+        assert not Parcel.objects.filter(id=parcel_id).exists()
+
+    def test_deleted_parcel_returns_404(self, auth_client, parcel):
+        parcel_id = parcel.id
+        auth_client.delete(f"/api/parcels/{parcel_id}/")
+        response = auth_client.get(f"/api/parcels/{parcel_id}/")
+        assert response.status_code == 404
+
+    def test_cannot_delete_other_user_parcel(self, auth_client, db):
+        from django.contrib.auth import get_user_model
+        other = get_user_model().objects.create_user(
+            username="other_del", password="pass", email="od@test.com"
+        )
+        other_parcel = Parcel.objects.create(
+            tracking_number="CNFR_OTHER_DEL",
+            owner=other,
+            status=Parcel.Status.PENDING,
+        )
+        response = auth_client.delete(f"/api/parcels/{other_parcel.id}/")
+        assert response.status_code == 404
+        assert Parcel.objects.filter(id=other_parcel.id).exists()  # toujours là
+
+
+# ---------------------------------------------------------------------------
 # GET /api/parcels/{id}/events/
 # ---------------------------------------------------------------------------
 
@@ -172,7 +244,6 @@ class TestParcelCreate:
         mock_instance.get_track_info.return_value = self._mock_payload(tracking_number)
         MockClient.return_value = mock_instance
 
-        # Patcher geocode_location là où il est importé dans tasks.py
         with patch("apps.tracking.services.geocoding.geocode_location", return_value=(31.23, 121.47)):
             response = auth_client.post("/api/parcels/", {
                 "tracking_number": tracking_number,

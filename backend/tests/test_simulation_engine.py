@@ -22,17 +22,14 @@ class TestHaversine:
         assert _haversine_km(48.85, 2.35, 48.85, 2.35) == pytest.approx(0.0, abs=1e-6)
 
     def test_paris_to_london(self):
-        """Paris → Londres ~340 km."""
         km = _haversine_km(48.8566, 2.3522, 51.5074, -0.1278)
         assert 330 < km < 360
 
     def test_shanghai_to_paris(self):
-        """Shanghai → Paris ~9200 km."""
         km = _haversine_km(31.23, 121.47, 48.85, 2.35)
         assert 9000 < km < 9500
 
     def test_antipodal_points(self):
-        """Points antipodaux → demi-circonférence terrestre ~20015 km."""
         km = _haversine_km(0.0, 0.0, 0.0, 180.0)
         assert 20000 < km < 20040
 
@@ -58,15 +55,11 @@ class TestSlerp:
 
     def test_t_half_is_between(self):
         """
-        t=0.5 sur le grand cercle Shanghai → Paris passe par le nord (∼58°N)
-        car la route polaire est la plus courte.
-        On vérifie juste que le point est entre les deux longitudes.
+        Grand cercle Shanghai → Paris passe par le nord polaire (~58°N).
+        On vérifie que le point est dans les plages attendues.
         """
         lat, lng = _slerp(31.23, 121.47, 48.85, 2.35, 0.5)
-        # Latitude : entre 25°N et 75°N (arc polaire normal)
         assert 25.0 < lat < 75.0
-        # Longitude : entre 2°E et 122°E (en allant vers l'ouest via le pôle)
-        # La longitude intermédiaire dépend de la direction du grand cercle
         assert -180.0 <= lng <= 180.0
 
     def test_t_clamped_below_zero(self):
@@ -78,7 +71,6 @@ class TestSlerp:
         assert lat == pytest.approx(31.23, abs=1e-4)
 
     def test_identical_points_fallback_linear(self):
-        """Points identiques → pas de division par zéro."""
         lat, lng = _slerp(48.85, 2.35, 48.85, 2.35, 0.5)
         assert lat == pytest.approx(48.85, abs=1e-4)
         assert lng == pytest.approx(2.35, abs=1e-4)
@@ -99,11 +91,9 @@ class TestComputeParcelSimulation:
         from apps.tracking.models import TrackingEvent
         now = timezone.now()
         ev = TrackingEvent.objects.create(
-            parcel=parcel,
-            timestamp=now,
+            parcel=parcel, timestamp=now,
             latitude=31.23, longitude=121.47,
-            status="Departed",
-            description="Seul event",
+            status="Departed", description="Seul event",
         )
         compute_parcel_simulation(parcel)
         ev.refresh_from_db()
@@ -136,6 +126,36 @@ class TestComputeParcelSimulation:
         count = TrackingEvent.objects.filter(parcel=parcel_with_events, simulated=True).count()
         assert count == 3
 
+    def test_unordered_events_sorted_correctly(self, parcel, db):
+        """Events non triés chronologiquement → doit quand même chaîner dans le bon ordre."""
+        from apps.tracking.models import TrackingEvent
+        now = timezone.now()
+        # Créés dans le mauvais ordre
+        ev3 = TrackingEvent.objects.create(
+            parcel=parcel, timestamp=now,
+            latitude=48.85, longitude=2.35,
+            status="Arrived", description="Paris",
+        )
+        ev1 = TrackingEvent.objects.create(
+            parcel=parcel, timestamp=now - timedelta(days=10),
+            latitude=31.23, longitude=121.47,
+            status="Departed", description="Shanghai",
+        )
+        ev2 = TrackingEvent.objects.create(
+            parcel=parcel, timestamp=now - timedelta(days=5),
+            latitude=25.20, longitude=55.27,
+            status="In transit", description="Dubai",
+        )
+        compute_parcel_simulation(parcel)
+
+        ev1.refresh_from_db()
+        ev2.refresh_from_db()
+        ev3.refresh_from_db()
+
+        # La chaîne doit suivre l'ordre chronologique
+        assert ev1.estimated_arrival == ev2.estimated_departure
+        assert ev2.estimated_arrival == ev3.estimated_departure
+
 
 # ---------------------------------------------------------------------------
 # get_current_simulated_position (DB)
@@ -161,13 +181,10 @@ class TestGetCurrentSimulatedPosition:
         from apps.tracking.models import TrackingEvent
         past = timezone.now() - timedelta(days=30)
         TrackingEvent.objects.create(
-            parcel=parcel,
-            timestamp=past,
+            parcel=parcel, timestamp=past,
             latitude=48.85, longitude=2.35,
-            status="Delivered",
-            description="Livré",
-            estimated_departure=past,
-            estimated_arrival=past,
+            status="Delivered", description="Livré",
+            estimated_departure=past, estimated_arrival=past,
             simulated=True,
         )
         result = get_current_simulated_position(parcel)
@@ -175,6 +192,24 @@ class TestGetCurrentSimulatedPosition:
         assert result["progress"] == 1.0
         assert result["lat"] == pytest.approx(48.85)
         assert result["lng"] == pytest.approx(2.35)
+
+    def test_before_first_event_progress_is_zero(self, parcel):
+        """now < estimated_departure du 1er event → progress = 0.0."""
+        from apps.tracking.models import TrackingEvent
+        future = timezone.now() + timedelta(days=10)
+        TrackingEvent.objects.create(
+            parcel=parcel, timestamp=future,
+            latitude=31.23, longitude=121.47,
+            status="Pending", description="Pas encore parti",
+            estimated_departure=future,
+            estimated_arrival=future + timedelta(days=5),
+            simulated=True,
+        )
+        result = get_current_simulated_position(parcel)
+        assert result is not None
+        assert result["progress"] == 0.0
+        assert result["lat"] == pytest.approx(31.23)
+        assert result["lng"] == pytest.approx(121.47)
 
     def test_progress_is_global(self, parcel_with_events):
         compute_parcel_simulation(parcel_with_events)
