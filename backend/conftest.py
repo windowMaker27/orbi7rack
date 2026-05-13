@@ -2,6 +2,7 @@
 conftest.py — fixtures globales pytest-django
 """
 import pytest
+import warnings
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -13,11 +14,11 @@ User = get_user_model()
 
 @pytest.fixture(autouse=True)
 def suppress_jwt_key_warnings():
-    """Supprime InsecureKeyLengthWarning due à la SECRET_KEY courte en test."""
-    import warnings
-    from jwt.exceptions import InsecureKeyLengthWarning
+    """Supprime InsecureKeyLengthWarning sans importer la classe
+    (la classe n'existe pas dans toutes les versions de PyJWT)."""
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", InsecureKeyLengthWarning)
+        warnings.filterwarnings("ignore", message=".*HMAC key.*bytes.*", category=UserWarning)
+        warnings.filterwarnings("ignore", message=".*HMAC key.*bytes.*")
         yield
 
 
