@@ -40,8 +40,8 @@ Le SimulationEngine interpolant déjà les trajectoires aériennes, l'intégrati
 
 | API | Usage prévu | Accès |
 |---|---|---|
-| [OpenSky Network](https://opensky-network.org/apidoc/) | Position live des avions cargo sur les routes CN→EU | Gratuit (anonymous ou compte) |
-| [FlightRadar24 API](https://fr24api.flightradar24.com/docs) | Données de vol enrichies (compagnie, vitesse, altitude) | Payant (Business) |
+| [OpenSky Network](https://opensky-network.org/apidoc/) | Position live des avions cargo sur les routes CN→EU | Gratuit (avec compte) |
+| [FlightRadar24 API](https://fr24api.flightradar24.com/docs) | Données de vol enrichies (compagnie, vitesse, altitude) | Gratuit (avec compte) |
 
 Objectif : quand un `TrackingEvent` a un `flight_iata` renseigné par 17TRACK, récupérer la position réelle du vol via OpenSky et l'afficher sur le globe en remplacement de la position simulée.
 
@@ -64,7 +64,7 @@ cd orbi7rack
 
 # 2. Configure
 cp .env.example .env
-# Remplis les variables obligatoires (voir section Variables d'environnement)
+# Remplir les variables obligatoires (voir section Variables d'environnement)
 
 # 3. Build & start
 make build
