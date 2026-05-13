@@ -172,6 +172,11 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
+/** Résout la position courante d'un colis :
+ *  1. flightPositions live (OpenSky)
+ *  2. flightPositions simulé avec progress
+ *  3. estimated_position de l'API (SimulationEngine)
+ */
 function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
   const fp = flightPos[p.id];
   if (fp) {
@@ -186,6 +191,28 @@ function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat:
   return p.estimated_position ?? null;
 }
 
+/** Résout le point de départ d'un arc :
+ *  1. origin_coords de l'API (premier event géocodé)
+ *  2. centroïde ISO2 en fallback
+ */
+function resolveOrigin(p: Parcel): [number, number] | null {
+  if (p.origin_coords?.lat != null && p.origin_coords?.lng != null) {
+    return [p.origin_coords.lat, p.origin_coords.lng];
+  }
+  return getCentroid(p.origin_country);
+}
+
+/** Résout le point d'arrivée d'un arc :
+ *  1. dest_coords de l'API (dernier event géocodé côté destination)
+ *  2. estimated_position en fallback
+ */
+function resolveDest(p: Parcel): { lat: number; lng: number } | null {
+  if (p.dest_coords?.lat != null && p.dest_coords?.lng != null) {
+    return { lat: p.dest_coords.lat, lng: p.dest_coords.lng };
+  }
+  return p.estimated_position ?? null;
+}
+
 function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPositionMap = {}) {
   const SC = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const points = parcels.map(p => {
@@ -193,14 +220,16 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
     if (!pos) return null;
     return { lat: pos.lat, lng: pos.lng, label: p.tracking_number, status: p.status, description: p.description, color: SC[p.status] ?? (isDark ? "#ffffff" : "#1a1a2e"), altitude: 0.02, radius: 0.4 };
   }).filter(Boolean);
+
   const arcs = parcels
     .filter(p => p.status !== "delivered" && p.status !== "expired")
     .map(p => {
-      const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
+      const origin = resolveOrigin(p);
+      const dest = resolveDest(p);
       if (!origin || !dest) return null;
       return { startLat: origin[0], startLng: origin[1], endLat: dest.lat, endLng: dest.lng, color: SC[p.status] ?? "#ffffff", label: p.tracking_number };
     }).filter(Boolean);
+
   const rings = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
@@ -208,11 +237,12 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
       if (!pos) return null;
       return { lat: pos.lat, lng: pos.lng, color: SC[p.status] ?? "#fff" };
     }).filter(Boolean);
+
   const transport = parcels
     .filter(p => p.status === "in_transit" || p.status === "out_for_delivery")
     .map(p => {
-      const origin = getCentroid(p.origin_country);
-      const dest = p.estimated_position;
+      const origin = resolveOrigin(p);
+      const dest = resolveDest(p);
       if (!origin || !dest) return null;
       return {
         id: p.id,
@@ -224,6 +254,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         _curAlt: null as number | null, _curHdg: null as number | null,
       };
     }).filter(Boolean);
+
   return { points, arcs, rings, transport };
 }
 
@@ -254,7 +285,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .ringLat((d: any) => d.lat).ringLng((d: any) => d.lng)
     .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "00")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
-  void SC; // used via buildData above
+  void SC;
 }
 
 function purgeLights(scene: THREE.Scene) {

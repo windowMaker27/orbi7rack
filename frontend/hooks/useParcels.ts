@@ -9,12 +9,26 @@ export interface TrackingEvent {
   longitude: number | null;
   status: string;
   description: string;
+  transport_mode?: string;
+  flight_iata?: string | null;
+  estimated_departure?: string | null;
+  estimated_arrival?: string | null;
+  simulated?: boolean;
+}
+
+export interface GeoCoords {
+  lat: number;
+  lng: number;
+  source: string;
 }
 
 export interface EstimatedPosition {
   lat: number;
   lng: number;
-  source: "dest_country" | "last_event" | "origin_country";
+  progress?: number;
+  source: string;
+  segment_index?: number;
+  segment_total?: number;
 }
 
 export interface Parcel {
@@ -30,6 +44,8 @@ export interface Parcel {
   updated_at: string;
   events: TrackingEvent[];
   estimated_position: EstimatedPosition | null;
+  origin_coords: GeoCoords | null;
+  dest_coords: GeoCoords | null;
   flight_number?: string | null;
 }
 
