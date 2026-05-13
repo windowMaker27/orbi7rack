@@ -14,7 +14,6 @@
 - 📡 **Sync 17TRACK** — récupère et parse les events de tracking en temps réel via Celery
 - 🔐 **Auth JWT** — inscription / connexion, tokens access + refresh
 - 🌗 **Light / Dark mode** intégré
-- 📦 **Ajout de colis** avec mise à jour instantanée de la sidebar (sans reload)
 
 ---
 
