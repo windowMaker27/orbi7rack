@@ -52,7 +52,7 @@ seed:
 	bash scripts/seed.sh
 
 seed-demo:
-	docker compose exec backend python scripts/seed_demo.py
+	docker compose exec backend python scripts/seed_demo.py --username $(USERNAME)
 
 reset-db:
 	bash scripts/reset_db.sh
