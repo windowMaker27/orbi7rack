@@ -1,8 +1,6 @@
 import time
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
-from celery import shared_task
-from apps.tracking.models import TrackingEvent
 
 # Mapping codes 17Track → (ISO, lat, lng, nom)
 COUNTRY_CODES_17TRACK = {
@@ -93,18 +91,3 @@ def geocode_location(location_str: str, retries: int = 2) -> tuple:
             return (None, None)
 
     return (None, None)
-
-
-@shared_task
-def geocode_event(event_id: int):
-    """Legacy — conservé pour compatibilité. Préférer geocode_event_then_simulate."""
-    try:
-        event = TrackingEvent.objects.get(id=event_id)
-        if event.location and not event.latitude:
-            lat, lng = geocode_location(event.location)
-            if lat:
-                event.latitude = lat
-                event.longitude = lng
-                event.save(update_fields=["latitude", "longitude"])
-    except TrackingEvent.DoesNotExist:
-        pass
