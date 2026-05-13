@@ -3,15 +3,17 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import type { Parcel } from "@/hooks/useParcels";
+import type { Theme } from "@/context/ThemeContext";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 interface AddParcelModalProps {
   onClose: () => void;
-  onAdded: (parcel: Parcel) => void;
+  onParcelAdded: (parcel: Parcel) => void;
+  theme?: Theme;
 }
 
-export default function AddParcelModal({ onClose, onAdded }: AddParcelModalProps) {
+export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModalProps) {
   const { access } = useAuth();
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrier, setCarrier] = useState("");
@@ -55,7 +57,7 @@ export default function AddParcelModal({ onClose, onAdded }: AddParcelModalProps
         throw new Error(data?.tracking_number?.[0] ?? data?.detail ?? "Erreur lors de l'ajout");
       }
       const parcel: Parcel = await res.json();
-      onAdded(parcel);
+      onParcelAdded(parcel);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -65,7 +67,6 @@ export default function AddParcelModal({ onClose, onAdded }: AddParcelModalProps
   };
 
   return (
-    // Backdrop
     <div
       onClick={onClose}
       style={{
@@ -74,7 +75,6 @@ export default function AddParcelModal({ onClose, onAdded }: AddParcelModalProps
         display: "flex", alignItems: "center", justifyContent: "center",
       }}
     >
-      {/* Modal */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
