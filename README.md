@@ -14,6 +14,7 @@
 - 📡 **Sync 17TRACK** — récupère et parse les events de tracking en temps réel via Celery
 - 🔐 **Auth JWT** — inscription / connexion, tokens access + refresh
 - 🌗 **Light / Dark mode** intégré
+- 📦 **Ajout de colis** avec mise à jour instantanée de la sidebar (sans reload)
 
 ---
 
@@ -30,6 +31,19 @@
 | Tracking API | [17TRACK](https://api.17track.net) |
 | Géocodage | Nominatim (OpenStreetMap) |
 | Infra | Docker Compose + Makefile |
+
+---
+
+## Plane Tracking API _(roadmap)_
+
+Le SimulationEngine interpolant déjà les trajectoires aériennes, l'intégration de données de vol réelles est prévue pour enrichir la visualisation :
+
+| API | Usage prévu | Accès |
+|---|---|---|
+| [OpenSky Network](https://opensky-network.org/apidoc/) | Position live des avions cargo sur les routes CN→EU | Gratuit (anonymous ou compte) |
+| [FlightRadar24 API](https://fr24api.flightradar24.com/docs) | Données de vol enrichies (compagnie, vitesse, altitude) | Payant (Business) |
+
+Objectif : quand un `TrackingEvent` a un `flight_iata` renseigné par 17TRACK, récupérer la position réelle du vol via OpenSky et l'afficher sur le globe en remplacement de la position simulée.
 
 ---
 
