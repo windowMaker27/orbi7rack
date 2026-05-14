@@ -20,6 +20,37 @@ STATUS_MAP = {
     50: Parcel.Status.EXCEPTION,
 }
 
+# Préfixes de tracking number → pays destination ISO2
+_TRACKING_PREFIX_DEST = {
+    "CNFR": "FR", "CNDE": "DE", "CNGB": "GB", "CNUS": "US",
+    "CNPL": "PL", "CNNL": "NL", "CNES": "ES", "CNIT": "IT",
+    "CNBE": "BE", "CNPT": "PT", "CNSE": "SE", "CNCH": "CH",
+    "CNAT": "AT", "CNCA": "CA", "CNAU": "AU", "CNJP": "JP",
+    "CNKR": "KR", "CNSG": "SG", "CNHK": "HK",
+}
+
+# Préfixes de tracking number → pays origine ISO2
+_TRACKING_PREFIX_ORIGIN = {
+    "CN": "CN",  # tous les CNFR, CNDE… viennent de Chine
+    "US": "US",
+    "GB": "GB",
+    "DE": "DE",
+    "FR": "FR",
+}
+
+
+def _resolve_country_from_prefix(tracking_number: str) -> tuple[str, str]:
+    """Retourne (origin_iso, dest_iso) depuis le préfixe du numéro de suivi."""
+    tn = (tracking_number or "").upper()
+    dest = ""
+    for prefix, country in _TRACKING_PREFIX_DEST.items():
+        if tn.startswith(prefix):
+            dest = country
+            break
+    # Origine : les 2 premiers caractères s'ils sont dans la table
+    origin = _TRACKING_PREFIX_ORIGIN.get(tn[:2], "")
+    return origin, dest
+
 
 def parse_17track_datetime(value: str | None):
     if not value:
@@ -66,18 +97,30 @@ def sync_parcel_from_17track(parcel: Parcel, payload: dict[str, Any]) -> Parcel:
     origin_code = track.get("b") or 0
     dest_code   = track.get("d") or 0
 
-    if not dest_code:
-        logger.warning(
-            f"[17track] Champ 'd' absent pour {parcel.tracking_number}, dest_country non mis à jour"
-        )
-
     iso_origin, _, _, _ = country_code_to_iso(origin_code)
     iso_dest, _, _, _   = country_code_to_iso(dest_code)
 
-    parcel.status         = STATUS_MAP.get(track.get("e"), Parcel.Status.PENDING)
-    parcel.origin_country = iso_origin or str(origin_code)
+    # Fallback préfixe tracking number si 17track ne fournit pas les pays
+    prefix_origin, prefix_dest = _resolve_country_from_prefix(parcel.tracking_number)
+
+    # origin_country : ne pas écraser si déjà défini (17track change de pays au fil des étapes)
+    if not parcel.origin_country:
+        parcel.origin_country = iso_origin or prefix_origin or str(origin_code)
+
+    # dest_country : 17track > fallback préfixe > conserver existant
     if iso_dest:
         parcel.dest_country = iso_dest
+    elif not parcel.dest_country and prefix_dest:
+        parcel.dest_country = prefix_dest
+        logger.info(
+            f"[parser] dest_country résolu via préfixe pour {parcel.tracking_number} → {prefix_dest}"
+        )
+    elif not parcel.dest_country:
+        logger.warning(
+            f"[parser] dest_country introuvable pour {parcel.tracking_number} (d={dest_code})"
+        )
+
+    parcel.status         = STATUS_MAP.get(track.get("e"), Parcel.Status.PENDING)
     parcel.carrier        = str(track.get("w1") or parcel.carrier or "")
     parcel.last_synced_at = timezone.now()
     parcel.save()
