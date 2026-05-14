@@ -51,8 +51,23 @@ CARRIER_IATA: dict[str, str] = {
 FLIGHT_RE = re.compile(r"\b([A-Z0-9]{2,3})\s?(\d{3,4})\b")
 
 # ---------------------------------------------------------------------------
-# Keywords transport — ROAD a priorité absolue sur AIR
+# Keywords transport
+# Priorité : FLIGHT > ROAD > SEA > unknown
+# FLIGHT a priorité absolue : customs/airport sont des étapes aéroportuaires.
 # ---------------------------------------------------------------------------
+
+FLIGHT_KEYWORDS = re.compile(
+    r"\b("
+    r"flight|vol|airline"
+    r"|air.?freight|air.?cargo"
+    r"|loaded.?on.?flight|departed.?on.?flight|arrived.?by.?air"
+    r"|aéroport|airport"
+    r"|envol|airway|airways"
+    r"|iata"
+    r"|customs.?clearance|dédouanement|import.?customs|export.?customs"
+    r")\b",
+    re.IGNORECASE,
+)
 
 ROAD_KEYWORDS = re.compile(
     r"\b("
@@ -66,9 +81,7 @@ ROAD_KEYWORDS = re.compile(
     r"|handed.?over|remis|remise"
     r"|received.?by"
     r"|post.?office|bureau.?de.?poste"
-    r"|customs.?clearance|dédouanement|import.?customs|export.?customs"
     r"|transit.?country|transit.?region"
-    # Patterns 17track "departure country/region" = remise au transporteur terrestre
     r"|departure.?country|departure.?region"
     r"|leaving.?from|leaving.?transit"
     r"|departed.?from.?(departure|sorting|transit)"
@@ -76,20 +89,6 @@ ROAD_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-# Étape aérienne : seulement si ROAD ne matche pas d'abord
-FLIGHT_KEYWORDS = re.compile(
-    r"\b("
-    r"flight|vol|airline"
-    r"|air.?freight|air.?cargo"
-    r"|loaded.?on.?flight|departed.?on.?flight|arrived.?by.?air"
-    r"|aéroport|envol"
-    r"|airway|airways"
-    r"|iata"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# Étape maritime
 SEA_KEYWORDS = re.compile(
     r"\b(ship|vessel|port|sea|maritime|ocean|container|navire|mer)\b",
     re.IGNORECASE,
@@ -99,16 +98,16 @@ SEA_KEYWORDS = re.compile(
 def detect_transport_mode(description: str, location: str) -> str:
     """
     Retourne 'air' | 'road' | 'sea' | 'unknown'.
-    Priorité : ROAD > SEA > AIR > régex vol > unknown.
+    Priorité : FLIGHT > ROAD > SEA > regex vol > unknown.
     """
     text = f"{description} {location}"
 
+    if FLIGHT_KEYWORDS.search(text):
+        return "air"
     if ROAD_KEYWORDS.search(text):
         return "road"
     if SEA_KEYWORDS.search(text):
         return "sea"
-    if FLIGHT_KEYWORDS.search(text):
-        return "air"
     if FLIGHT_RE.search(description.upper()):
         return "air"
     return "unknown"
@@ -116,9 +115,10 @@ def detect_transport_mode(description: str, location: str) -> str:
 
 def extract_flight_number(description: str, location: str = "") -> Optional[str]:
     """
-    Extrait le numéro de vol IATA depuis le texte.
+    Extrait le numéro de vol IATA depuis le texte (description + location).
     Retourne None si le mode transport est road/sea/unknown.
     """
+    # Calcule le mode sur le texte combiné pour que le location soit pris en compte
     mode = detect_transport_mode(description, location)
     if mode in ("road", "sea", "unknown"):
         return None
@@ -217,7 +217,7 @@ def enrich_event_flight(
     desc = event.description or ""
     loc  = event.location or ""
 
-    # 1. Mode de transport (ROAD > SEA > AIR)
+    # 1. Mode de transport (FLIGHT > ROAD > SEA > unknown)
     mode = detect_transport_mode(desc, loc)
     event.transport_mode = mode
 
