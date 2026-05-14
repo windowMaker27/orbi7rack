@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
+from django.db.models import Count
 
 from apps.tracking.models import Parcel, TrackingEvent
 
@@ -28,8 +29,6 @@ ISO2_CENTROIDS = {
     "ZA": (-28.47, 24.67),
 }
 
-# Préfixes de tracking number → pays destination
-# Ex: CNFR → China→France, CNDE → China→Germany
 _TRACKING_PREFIX_DEST = {
     "CNFR": "FR", "CNDE": "DE", "CNGB": "GB", "CNUS": "US",
     "CNPL": "PL", "CNNL": "NL", "CNES": "ES", "CNIT": "IT",
@@ -46,7 +45,6 @@ def get_centroid(country_code: str):
 
 
 def _resolve_dest_country(obj) -> str:
-    """Retourne le code pays destination, en fallback sur le préfixe du tracking number."""
     if obj.dest_country:
         return obj.dest_country.upper()
     tn = (obj.tracking_number or "").upper()
@@ -80,6 +78,7 @@ class ParcelSerializer(serializers.ModelSerializer):
     estimated_position = serializers.SerializerMethodField()
     origin_coords = serializers.SerializerMethodField()
     dest_coords = serializers.SerializerMethodField()
+    transport_mode = serializers.SerializerMethodField()
 
     class Meta:
         model = Parcel
@@ -98,6 +97,7 @@ class ParcelSerializer(serializers.ModelSerializer):
             "estimated_position",
             "origin_coords",
             "dest_coords",
+            "transport_mode",
         ]
         read_only_fields = [
             "status",
@@ -108,13 +108,35 @@ class ParcelSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_transport_mode(self, obj):
+        """
+        Mode de transport dominant du colis, calculé depuis les events.
+        Priorité : air > sea > road > unknown.
+        Si au moins 1 event 'air' existe → 'air' (vol aérien confirmé).
+        Sinon mode majoritaire parmi les events non-unknown.
+        """
+        modes = (
+            obj.events
+            .values("transport_mode")
+            .annotate(n=Count("id"))
+            .order_by("-n")
+        )
+        counts = {m["transport_mode"]: m["n"] for m in modes}
+
+        # Si au moins 1 event explicitement 'air' → colis aérien
+        if counts.get("air", 0) > 0:
+            return "air"
+        if counts.get("sea", 0) > 0:
+            return "sea"
+        if counts.get("road", 0) > 0:
+            return "road"
+        return "unknown"
+
     def _geo_events(self, obj):
-        """Events géocodés triés ASC, dédupliqués par (lat, lng) consécutifs."""
         raw = [
             e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
             if e.latitude is not None and e.longitude is not None
         ]
-        # Déduplication : on ignore les events consécutifs avec exactement les mêmes coords
         deduped = []
         for e in raw:
             if not deduped or (e.latitude, e.longitude) != (deduped[-1].latitude, deduped[-1].longitude):
@@ -132,24 +154,17 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_dest_coords(self, obj):
-        """Coordonnées destination — chaîne de fallbacks robuste :
-        1. Dernier event géocodé distinct (dédupliqué) si ≥2 events distincts
-        2. Centroïde dest_country (ou pays résolu via préfixe tracking number)
-        3. Seul event géocodé disponible
-        """
         geo = self._geo_events(obj)
 
         if len(geo) >= 2:
             e = geo[-1]
             return {"lat": e.latitude, "lng": e.longitude, "source": "event"}
 
-        # Fallback pays : dest_country ou préfixe tracking number
         dest_country = _resolve_dest_country(obj)
         pos = get_centroid(dest_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "centroid"}
 
-        # Dernier recours : seul event disponible
         if geo:
             e = geo[-1]
             return {"lat": e.latitude, "lng": e.longitude, "source": "event_single"}
@@ -157,14 +172,6 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_estimated_position(self, obj):
-        """
-        Priorité :
-        1. SimulationEngine (segments temporels avec slerp) — si des events simulated=True existent
-        2. Colis delivered → centroïde dest_country
-        3. Dernier event géocodé (statique)
-        4. Centroïde origin_country
-        """
-        # 1. SimulationEngine
         simulated_events = [
             e for e in obj.events.all()
             if getattr(e, 'simulated', False) and e.latitude is not None
@@ -178,14 +185,12 @@ class ParcelSerializer(serializers.ModelSerializer):
             except Exception:
                 pass
 
-        # 2. Delivered
         if obj.status == Parcel.Status.DELIVERED:
             dest_country = _resolve_dest_country(obj)
             pos = get_centroid(dest_country)
             if pos:
                 return {"lat": pos[0], "lng": pos[1], "source": "dest_country", "progress": 1.0}
 
-        # 3. Dernier event géocodé
         geo_event = next(
             (e for e in obj.events.all() if e.latitude is not None and e.longitude is not None),
             None
@@ -198,7 +203,6 @@ class ParcelSerializer(serializers.ModelSerializer):
                 "progress": None,
             }
 
-        # 4. Centroïde origin
         pos = get_centroid(obj.origin_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "origin_country", "progress": 0.0}

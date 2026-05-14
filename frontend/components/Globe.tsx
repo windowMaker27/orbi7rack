@@ -172,11 +172,21 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-/** Résout la position courante d'un colis :
- *  1. flightPositions live (OpenSky)
- *  2. flightPositions simulé avec progress
- *  3. estimated_position de l'API (SimulationEngine)
+/**
+ * Choisit l'emoji de transport selon le mode dominant du colis.
+ * - air  → ✈️  (seulement si confirmé explicitement)
+ * - sea  → 🚢
+ * - road / unknown / out_for_delivery → 🚚
  */
+function resolveTransportEmoji(p: Parcel): string {
+  if (p.status === "out_for_delivery") return "\uD83D\uDE9A"; // 🚚
+  switch (p.transport_mode) {
+    case "air":  return "\u2708\uFE0F"; // ✈️
+    case "sea":  return "\uD83D\uDEA2"; // 🚢
+    default:     return "\uD83D\uDE9A"; // 🚚 (road, unknown, undefined)
+  }
+}
+
 function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
   const fp = flightPos[p.id];
   if (fp) {
@@ -191,10 +201,6 @@ function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat:
   return p.estimated_position ?? null;
 }
 
-/** Résout le point de départ d'un arc :
- *  1. origin_coords de l'API (premier event géocodé)
- *  2. centroïde ISO2 en fallback
- */
 function resolveOrigin(p: Parcel): [number, number] | null {
   if (p.origin_coords?.lat != null && p.origin_coords?.lng != null) {
     return [p.origin_coords.lat, p.origin_coords.lng];
@@ -202,21 +208,13 @@ function resolveOrigin(p: Parcel): [number, number] | null {
   return getCentroid(p.origin_country);
 }
 
-/** Résout le point d'arrivée d'un arc — chaîne de fallbacks :
- *  1. dest_coords de l'API (dernier event géocodé côté destination)
- *  2. estimated_position (SimEngine ou dernier event connu)
- *  3. centroïde ISO2 dest_country
- */
 function resolveDest(p: Parcel): { lat: number; lng: number } | null {
   if (p.dest_coords?.lat != null && p.dest_coords?.lng != null) {
     return { lat: p.dest_coords.lat, lng: p.dest_coords.lng };
   }
-  // Fallback : estimated_position (comportement pré-commit, couvre les colis
-  // avec un seul event géocodé comme CNFR9010519938925HD)
   if (p.estimated_position?.lat != null && p.estimated_position?.lng != null) {
     return { lat: p.estimated_position.lat, lng: p.estimated_position.lng };
   }
-  // Dernier recours : centroïde pays destination
   const c = getCentroid(p.dest_country);
   return c ? { lat: c[0], lng: c[1] } : null;
 }
@@ -257,7 +255,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         startLat: origin[0], startLng: origin[1],
         endLat: dest.lat, endLng: dest.lng,
         color: SC[p.status] ?? "#fff",
-        emoji: p.status === "out_for_delivery" ? "\uD83D\uDE9A" : "\u2708\uFE0F",
+        emoji: resolveTransportEmoji(p),
         _curLat: null as number | null, _curLng: null as number | null,
         _curAlt: null as number | null, _curHdg: null as number | null,
       };

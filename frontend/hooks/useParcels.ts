@@ -47,6 +47,8 @@ export interface Parcel {
   origin_coords: GeoCoords | null;
   dest_coords: GeoCoords | null;
   flight_number?: string | null;
+  /** Mode de transport dominant calculé côté backend */
+  transport_mode?: "air" | "road" | "sea" | "unknown";
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
