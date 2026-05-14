@@ -53,7 +53,6 @@ FLIGHT_RE = re.compile(r"\b([A-Z0-9]{2,3})\s?(\d{3,4})\b")
 # ---------------------------------------------------------------------------
 # Keywords transport
 # Priorité : FLIGHT > ROAD > SEA > unknown
-# FLIGHT a priorité absolue : customs/airport sont des étapes aéroportuaires.
 # ---------------------------------------------------------------------------
 
 FLIGHT_KEYWORDS = re.compile(
@@ -98,7 +97,7 @@ SEA_KEYWORDS = re.compile(
 def detect_transport_mode(description: str, location: str) -> str:
     """
     Retourne 'air' | 'road' | 'sea' | 'unknown'.
-    Priorité : FLIGHT > ROAD > SEA > regex vol > unknown.
+    Priorité : FLIGHT > ROAD > SEA > regex vol (sur description+location) > unknown.
     """
     text = f"{description} {location}"
 
@@ -108,17 +107,17 @@ def detect_transport_mode(description: str, location: str) -> str:
         return "road"
     if SEA_KEYWORDS.search(text):
         return "sea"
-    if FLIGHT_RE.search(description.upper()):
+    # Fallback : code de vol IATA dans le texte combiné (description ET location)
+    if FLIGHT_RE.search(text.upper()):
         return "air"
     return "unknown"
 
 
 def extract_flight_number(description: str, location: str = "") -> Optional[str]:
     """
-    Extrait le numéro de vol IATA depuis le texte (description + location).
+    Extrait le numéro de vol IATA depuis description + location.
     Retourne None si le mode transport est road/sea/unknown.
     """
-    # Calcule le mode sur le texte combiné pour que le location soit pris en compte
     mode = detect_transport_mode(description, location)
     if mode in ("road", "sea", "unknown"):
         return None
@@ -217,19 +216,15 @@ def enrich_event_flight(
     desc = event.description or ""
     loc  = event.location or ""
 
-    # 1. Mode de transport (FLIGHT > ROAD > SEA > unknown)
     mode = detect_transport_mode(desc, loc)
     event.transport_mode = mode
 
-    # 2. Pas de numéro de vol si étape terrestre/maritime/unknown
     if mode in ("road", "sea", "unknown"):
         event.flight_iata = None
         return False
 
-    # 3. Extraction regex
     flight = extract_flight_number(desc, loc)
 
-    # 4. Fallback AviationStack
     if not flight and (dep_iata or arr_iata or carrier_name):
         flight = fallback_aviationstack(
             dep_iata=dep_iata,
