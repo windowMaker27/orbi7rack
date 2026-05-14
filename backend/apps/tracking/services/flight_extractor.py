@@ -51,10 +51,9 @@ CARRIER_IATA: dict[str, str] = {
 FLIGHT_RE = re.compile(r"\b([A-Z0-9]{2,3})\s?(\d{3,4})\b")
 
 # ---------------------------------------------------------------------------
-# Keywords transport — ROAD a priorité sur AIR
+# Keywords transport — ROAD a priorité absolue sur AIR
 # ---------------------------------------------------------------------------
 
-# Étape terrestre/douane/tri : ces keywords écrasent les keywords air
 ROAD_KEYWORDS = re.compile(
     r"\b("
     r"truck|camion|road|route"
@@ -69,6 +68,10 @@ ROAD_KEYWORDS = re.compile(
     r"|post.?office|bureau.?de.?poste"
     r"|customs.?clearance|dédouanement|import.?customs|export.?customs"
     r"|transit.?country|transit.?region"
+    # Patterns 17track "departure country/region" = remise au transporteur terrestre
+    r"|departure.?country|departure.?region"
+    r"|leaving.?from|leaving.?transit"
+    r"|departed.?from.?(departure|sorting|transit)"
     r")",
     re.IGNORECASE,
 )
@@ -82,7 +85,7 @@ FLIGHT_KEYWORDS = re.compile(
     r"|aéroport|envol"
     r"|airway|airways"
     r"|iata"
-    r")",
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -97,18 +100,15 @@ def detect_transport_mode(description: str, location: str) -> str:
     """
     Retourne 'air' | 'road' | 'sea' | 'unknown'.
     Priorité : ROAD > SEA > AIR > régex vol > unknown.
-    Les étapes de douane, livraison locale, tri sont toujours 'road'.
     """
     text = f"{description} {location}"
 
-    # ROAD en premier — écrase tout le reste
     if ROAD_KEYWORDS.search(text):
         return "road"
     if SEA_KEYWORDS.search(text):
         return "sea"
     if FLIGHT_KEYWORDS.search(text):
         return "air"
-    # Pattern numéro de vol = air par défaut
     if FLIGHT_RE.search(description.upper()):
         return "air"
     return "unknown"
@@ -117,11 +117,10 @@ def detect_transport_mode(description: str, location: str) -> str:
 def extract_flight_number(description: str, location: str = "") -> Optional[str]:
     """
     Extrait le numéro de vol IATA depuis le texte.
-    Ne retourne rien si le mode transport est road/sea.
+    Retourne None si le mode transport est road/sea/unknown.
     """
-    # Pas de numéro de vol sur une étape terrestre ou maritime
     mode = detect_transport_mode(description, location)
-    if mode in ("road", "sea"):
+    if mode in ("road", "sea", "unknown"):
         return None
 
     text = f"{description} {location}".upper()
@@ -173,8 +172,8 @@ def fallback_aviationstack(
         window = timedelta(hours=3)
 
         for f in flights:
-            dep_sched  = f.get("departure", {}).get("scheduled")
-            arr_sched  = f.get("arrival", {}).get("scheduled")
+            dep_sched   = f.get("departure", {}).get("scheduled")
+            arr_sched   = f.get("arrival", {}).get("scheduled")
             flight_iata = f.get("flight", {}).get("iata")
             if not flight_iata:
                 continue
@@ -222,7 +221,7 @@ def enrich_event_flight(
     mode = detect_transport_mode(desc, loc)
     event.transport_mode = mode
 
-    # 2. Pas de numéro de vol si étape terrestre/maritime
+    # 2. Pas de numéro de vol si étape terrestre/maritime/unknown
     if mode in ("road", "sea", "unknown"):
         event.flight_iata = None
         return False
