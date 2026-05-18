@@ -112,8 +112,6 @@ class ParcelSerializer(serializers.ModelSerializer):
         """
         Mode de transport dominant du colis, calculé depuis les events.
         Priorité : air > sea > road > unknown.
-        Si au moins 1 event 'air' existe → 'air' (vol aérien confirmé).
-        Sinon mode majoritaire parmi les events non-unknown.
         """
         modes = (
             obj.events
@@ -123,7 +121,6 @@ class ParcelSerializer(serializers.ModelSerializer):
         )
         counts = {m["transport_mode"]: m["n"] for m in modes}
 
-        # Si au moins 1 event explicitement 'air' → colis aérien
         if counts.get("air", 0) > 0:
             return "air"
         if counts.get("sea", 0) > 0:
@@ -133,15 +130,25 @@ class ParcelSerializer(serializers.ModelSerializer):
         return "unknown"
 
     def _geo_events(self, obj):
-        raw = [
-            e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
-            if e.latitude is not None and e.longitude is not None
-        ]
-        deduped = []
-        for e in raw:
-            if not deduped or (e.latitude, e.longitude) != (deduped[-1].latitude, deduped[-1].longitude):
-                deduped.append(e)
-        return deduped
+        """
+        Events géocodés triés ASC, dédupliqués par coordonnées consécutives.
+        Résultat mis en cache par pk pour éviter un double hit DB.
+        """
+        cache_attr = "_geo_events_cache"
+        if not hasattr(self, cache_attr):
+            object.__setattr__(self, cache_attr, {})
+        cache = getattr(self, cache_attr)
+        if obj.pk not in cache:
+            raw = [
+                e for e in sorted(obj.events.all(), key=lambda e: e.timestamp)
+                if e.latitude is not None and e.longitude is not None
+            ]
+            deduped = []
+            for e in raw:
+                if not deduped or (e.latitude, e.longitude) != (deduped[-1].latitude, deduped[-1].longitude):
+                    deduped.append(e)
+            cache[obj.pk] = deduped
+        return cache[obj.pk]
 
     def get_origin_coords(self, obj):
         geo = self._geo_events(obj)
@@ -154,6 +161,18 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_dest_coords(self, obj):
+        # Guard delivered : les events de transit sont du bruit, on va direct au centroide
+        if obj.status == Parcel.Status.DELIVERED:
+            dest_country = _resolve_dest_country(obj)
+            pos = get_centroid(dest_country)
+            if pos:
+                return {"lat": pos[0], "lng": pos[1], "source": "centroid_delivered"}
+            # dernier recours si dest_country absent de la table
+            geo = self._geo_events(obj)
+            if geo:
+                return {"lat": geo[-1].latitude, "lng": geo[-1].longitude, "source": "event_fallback"}
+            return None
+
         geo = self._geo_events(obj)
 
         if len(geo) >= 2:
@@ -172,6 +191,19 @@ class ParcelSerializer(serializers.ModelSerializer):
         return None
 
     def get_estimated_position(self, obj):
+        # 0. Guard delivered : court-circuite tout le reste, y compris simulation_engine
+        if obj.status == Parcel.Status.DELIVERED:
+            dest_country = _resolve_dest_country(obj)
+            pos = get_centroid(dest_country)
+            if pos:
+                return {"lat": pos[0], "lng": pos[1], "source": "dest_country", "progress": 1.0}
+            # si dest_country introuvable, on accepte last_event comme dernier recours
+            geo = self._geo_events(obj)
+            if geo:
+                return {"lat": geo[-1].latitude, "lng": geo[-1].longitude, "source": "last_event_delivered", "progress": 1.0}
+            return None
+
+        # 1. Simulation engine (colis en transit avec events simulés)
         simulated_events = [
             e for e in obj.events.all()
             if getattr(e, 'simulated', False) and e.latitude is not None
@@ -185,24 +217,17 @@ class ParcelSerializer(serializers.ModelSerializer):
             except Exception:
                 pass
 
-        if obj.status == Parcel.Status.DELIVERED:
-            dest_country = _resolve_dest_country(obj)
-            pos = get_centroid(dest_country)
-            if pos:
-                return {"lat": pos[0], "lng": pos[1], "source": "dest_country", "progress": 1.0}
-
-        geo_event = next(
-            (e for e in obj.events.all() if e.latitude is not None and e.longitude is not None),
-            None
-        )
-        if geo_event:
+        # 2. Dernier event géocodé réel (via _geo_events trié ASC)
+        geo = self._geo_events(obj)
+        if geo:
             return {
-                "lat": geo_event.latitude,
-                "lng": geo_event.longitude,
+                "lat": geo[-1].latitude,
+                "lng": geo[-1].longitude,
                 "source": "last_event",
                 "progress": None,
             }
 
+        # 3. Centroide origin (colis enregistré mais pas encore scanné)
         pos = get_centroid(obj.origin_country)
         if pos:
             return {"lat": pos[0], "lng": pos[1], "source": "origin_country", "progress": 0.0}
