@@ -225,6 +225,8 @@ class Command(BaseCommand):
                 longitude=orig["lng"],
                 status="in_transit",
                 description=f"Départ de {origin_name} sur le vol {fn}",
+                transport_mode="air",
+                flight_iata=fn,
             ))
         if dest:
             events.append(TrackingEvent(
@@ -235,6 +237,8 @@ class Command(BaseCommand):
                 longitude=dest["lng"],
                 status="in_transit",
                 description=f"Arrivée prévue à {dest_name}",
+                transport_mode="air",
+                flight_iata=fn,
             ))
 
         TrackingEvent.objects.bulk_create(events)
@@ -281,6 +285,8 @@ class Command(BaseCommand):
                 longitude=ev.get("lng"),
                 status="in_transit",
                 description=ev["description"],
+                transport_mode=ev.get("transport_mode", "air"),
+                flight_iata=ev.get("flight_iata", fn),
             ))
 
         TrackingEvent.objects.bulk_create(events_to_create)
@@ -331,6 +337,8 @@ class Command(BaseCommand):
                 "lat": orig["lat"] if orig else None,
                 "lng": orig["lng"] if orig else None,
                 "description": "[CDG] Shipment departed on flight AF842 — Air France cargo terminal",
+                "transport_mode": "air",
+                "flight_iata": "AF842",
             },
             {
                 "timestamp": now - timezone.timedelta(hours=1),
@@ -338,6 +346,8 @@ class Command(BaseCommand):
                 "lat": 48.5,
                 "lng": -30.0,
                 "description": "Vol AF842 en cours — altitude 35000ft, cap 270°",
+                "transport_mode": "air",
+                "flight_iata": "AF842",
             },
             {
                 "timestamp": now + timezone.timedelta(hours=5),
@@ -345,6 +355,8 @@ class Command(BaseCommand):
                 "lat": dest["lat"] if dest else None,
                 "lng": dest["lng"] if dest else None,
                 "description": "Arrivée prévue à Fort-de-France AC — flight AF842",
+                "transport_mode": "air",
+                "flight_iata": "AF842",
             },
         ]
 
@@ -360,6 +372,8 @@ class Command(BaseCommand):
                 longitude=ev["lng"],
                 status="in_transit",
                 description=ev["description"],
+                transport_mode=ev["transport_mode"],
+                flight_iata=ev["flight_iata"],
             )
             enriched = enrich_event_flight(obj, carrier_name="Air France")
             obj.save(update_fields=["flight_iata", "transport_mode"])
@@ -373,7 +387,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS(
-            f"✅ DEMO-LIVE-AF842 — Paris CDG (FR) → New York JFK (US) — vol AF842 ({len(raw_events)} events, extractor testé)"
+            f"✅ DEMO-LIVE-AF842 — Paris CDG (FR) → Fort-de-France (MQ) — vol AF842 ({len(raw_events)} events, extractor testé)"
         ))
 
     def handle(self, *args, **options):
