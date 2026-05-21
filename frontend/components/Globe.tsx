@@ -173,7 +173,7 @@ function lerpAngle(current:number,target:number,t:number):number{
 }
 
 /**
- * Choisit l'emoji de transport selon le mode dominant du colis.
+ * icone de transport selon le mode dominant du colis.
  * - air  → ✈️  (seulement si confirmé explicitement)
  * - sea  → 🚢
  * - road / unknown / out_for_delivery → 🚚
@@ -528,7 +528,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
     };
   }, [globeRef]);
 
-  const bgColor = theme === "dark" ? "#0a0000" : "#0d4f7a";
+  const bgColor = theme === "dark" ? "#0a0000" : "#ffffffbc";
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
   );
