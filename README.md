@@ -76,7 +76,6 @@ make seed-demo
 ```
 
 Frontend : http://localhost:3000  
-Backend API : http://localhost:8000
 
 ---
 
@@ -93,7 +92,6 @@ Copier `.env.example` → `.env` et renseigner :
 | `DB_PASSWORD` | Mot de passe PostgreSQL | `postgres` |
 | `TRACK17_API_KEY` | Clé API 17TRACK | `xxxxxxxx` |
 | `REDIS_URL` | URL Redis | `redis://redis:6379/0` |
-| `NEXT_PUBLIC_API_URL` | URL backend pour le frontend | `http://localhost:8000` |
 
 ---
 

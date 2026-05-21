@@ -120,7 +120,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ color: "#ff440099", fontFamily: "monospace", fontSize: 11, letterSpacing: 1 }}>
-              TRANSPORTEUR
+              TRANSPORTEUR (optionnel)
             </label>
             <input
               placeholder="ex: DHL, Cainiao, La Poste..."
