@@ -9,12 +9,12 @@
 
 ## Features
 
-- 🌍 **Globe 3D interactif** (Three.js via `globe.gl`) avec arcs de vol animés et marqueurs de position
-- ✈️ **SimulationEngine** — reconstruit la trajectoire géographique d'un colis à partir de ses events (haversine + slerp, détection air/road/sea)
-- 📡 **Sync 17TRACK** — récupère et parse les events de tracking en temps réel via Celery
-- 🔐 **Auth JWT** — inscription / connexion, tokens access + refresh
-- 🌗 **Light / Dark mode** intégré
-- 📦 **Ajout de colis** avec mise à jour instantanée de la sidebar (sans reload)
+- **Globe 3D interactif** (Three.js via `globe.gl`) avec arcs de vol animés et marqueurs de position
+- **SimulationEngine** — reconstruit la trajectoire géographique d'un colis à partir de ses events (haversine + slerp, détection air/road/sea)
+- **Sync 17TRACK** — récupère et parse les events de tracking en temps réel via Celery
+- **Auth JWT** — inscription / connexion, tokens access + refresh
+- **Light / Dark mode** intégré
+- **Ajout de colis** avec mise à jour instantanée de la sidebar (sans reload)
 
 ---
 
