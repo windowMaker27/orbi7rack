@@ -107,7 +107,7 @@ def detect_transport_mode(description: str, location: str) -> str:
         return "road"
     if SEA_KEYWORDS.search(text):
         return "sea"
-    # Fallback : code de vol IATA dans le texte combiné (description ET location)
+    # fallback : code de vol IATA dans le texte combiné (description ET location)
     if FLIGHT_RE.search(text.upper()):
         return "air"
     return "unknown"

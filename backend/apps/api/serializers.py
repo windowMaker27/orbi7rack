@@ -109,24 +109,13 @@ class ParcelSerializer(serializers.ModelSerializer):
         ]
 
     def get_transport_mode(self, obj):
-        """
-        Mode de transport dominant du colis, calculé depuis les events.
-        Priorité : air > sea > road > unknown.
-        """
-        modes = (
-            obj.events
-            .values("transport_mode")
-            .annotate(n=Count("id"))
-            .order_by("-n")
-        )
-        counts = {m["transport_mode"]: m["n"] for m in modes}
-
-        if counts.get("air", 0) > 0:
-            return "air"
-        if counts.get("sea", 0) > 0:
-            return "sea"
-        if counts.get("road", 0) > 0:
-            return "road"
+        events = sorted(obj.events.all(), key=lambda e: e.timestamp, reverse=True)
+    
+        for e in events:
+            mode = (e.transport_mode or "").lower()
+            if mode in {"road", "air", "sea"}:
+                return mode
+    
         return "unknown"
 
     def _geo_events(self, obj):

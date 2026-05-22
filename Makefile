@@ -1,4 +1,4 @@
-.PHONY: up down build migrate makemigrations seed seed-demo test shell logs restart
+.PHONY: up down build migrate makemigrations seed-demo test shell logs restart
 
 # ── Docker ────────────────────────────────────────────────
 up:
@@ -47,9 +47,6 @@ test-cov:
 	docker compose exec backend pytest --cov=apps --cov-report=term-missing
 
 # ── Utilitaires ───────────────────────────────────────────
-
-seed:
-	bash scripts/seed.sh
 
 seed-demo:
 	docker compose exec backend python scripts/seed_demo.py --username $(USERNAME)

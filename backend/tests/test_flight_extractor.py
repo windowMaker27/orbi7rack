@@ -69,6 +69,10 @@ class TestDetectTransportMode:
         """'truck' est dans ROAD_KEYWORDS. Pas de flight keyword dans cette phrase."""
         assert detect_transport_mode("En livraison par truck vers Paris", "") == "road"
 
+    def test_road_keyword_local(self):
+        """'local' est dans ROAD_KEYWORDS sans ambiguïté."""
+        assert detect_transport_mode("Colis reçu au local", "") == "road"
+
     def test_road_keyword_depot(self):
         """'depot' est dans ROAD_KEYWORDS sans ambiguïté."""
         assert detect_transport_mode("Colis reçu au depot local", "") == "road"
