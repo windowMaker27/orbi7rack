@@ -98,15 +98,24 @@ async function fetchCountries(): Promise<any> {
 
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
-  if (a < 15)  return "#4a7c3f";
-  if (a < 22)  return "#7ab648";
-  if (a < 30)  return "#c8a84b";
-  if (a < 37)  return "#b89060";
-  if (a < 45)  return "#8ab55a";
-  if (a < 55)  return "#6a9e48";
-  if (a < 65)  return "#4d7a38";
-  if (a < 75)  return "#7a9e6a";
-  return "#c8d4b8";
+  if (a <  8)  return "#2d8a1f";
+  if (a < 12)  return "#3da628";  
+  if (a < 17)  return "#5abb30"; 
+  if (a < 22)  return "#8cc43a"; 
+  if (a < 26)  return "#c4a020"; 
+  if (a < 30)  return "#d4821a"; 
+  if (a < 34)  return "#c86010";
+  if (a < 38)  return "#b87820"; 
+  if (a < 42)  return "#9ab040";
+  if (a < 46)  return "#72a838"; 
+  if (a < 50)  return "#5a9430"; 
+  if (a < 55)  return "#4a8028";
+  if (a < 60)  return "#3d6e22"; 
+  if (a < 65)  return "#4e7a3a"; 
+  if (a < 70)  return "#7a9858"; 
+  if (a < 75)  return "#9ab878"; 
+  if (a < 80)  return "#b8c890"; 
+  return "#d0ddb0";              
 }
 
 function featureCentroidLat(feature: any): number {
