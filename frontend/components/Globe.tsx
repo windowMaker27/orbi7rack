@@ -69,23 +69,7 @@ const DIRLIGHT = {
   light: { color: 0xd4eeff, intensity: 1.1 },
 };
 
-// Dark mode: orange ember palette (unchanged)
 const HEX_PALETTE_DARK = ["#ff4400","#ff6600","#ff8800","#ffaa00","#cc3300","#ff5500","#dd7700","#ee4400"];
-
-// Light mode: saturated earth tones that survive blue ocean + bright directional light
-// Warm greens, olives, ambers, terracottas — high enough saturation to avoid washout
-const HEX_PALETTE_LIGHT = [
-  "#3a8c2f", // forest green
-  "#5aab3a", // bright green
-  "#8fbd3a", // lime green
-  "#c8a020", // amber / savanna
-  "#b86b20", // terracotta
-  "#9c5c28", // earthy brown
-  "#6ab040", // meadow green
-  "#4e9e30", // mid green
-  "#d4a030", // golden wheat
-  "#a07830", // warm ochre
-];
 
 async function fetchCountries(): Promise<any> {
   try {
@@ -112,6 +96,19 @@ async function fetchCountries(): Promise<any> {
   throw new Error("Impossible de charger les données pays");
 }
 
+function latitudeBiomeColor(lat: number): string {
+  const a = Math.abs(lat);
+  if (a < 15)  return "#4a7c3f";
+  if (a < 22)  return "#7ab648";
+  if (a < 30)  return "#c8a84b";
+  if (a < 37)  return "#b89060";
+  if (a < 45)  return "#8ab55a";
+  if (a < 55)  return "#6a9e48";
+  if (a < 65)  return "#4d7a38";
+  if (a < 75)  return "#7a9e6a";
+  return "#c8d4b8";
+}
+
 function featureCentroidLat(feature: any): number {
   try {
     const geo = feature.geometry;
@@ -133,9 +130,9 @@ function featureCentroidLat(feature: any): number {
 }
 
 function stableHexColor(feature: any, isDark: boolean): string {
-  const idx = (feature.__hexIdx ?? 0);
-  if (isDark) return HEX_PALETTE_DARK[idx % HEX_PALETTE_DARK.length];
-  return HEX_PALETTE_LIGHT[idx % HEX_PALETTE_LIGHT.length];
+  if (isDark) return HEX_PALETTE_DARK[(feature.__hexIdx ?? 0) % HEX_PALETTE_DARK.length];
+  const lat = feature.__centroidLat ?? featureCentroidLat(feature);
+  return latitudeBiomeColor(lat);
 }
 
 function getCentroid(code: string): [number, number] | null {
@@ -175,12 +172,18 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
+/**
+ * icone de transport selon le mode dominant du colis.
+ * - air  → ✈️  (seulement si confirmé explicitement)
+ * - sea  → 🚢
+ * - road / unknown / out_for_delivery → 🚚
+ */
 function resolveTransportEmoji(p: Parcel): string {
   if (p.status === "out_for_delivery") return "\uD83D\uDE9A"; // 🚚
   switch (p.transport_mode) {
     case "air":  return "\u2708\uFE0F"; // ✈️
     case "sea":  return "\uD83D\uDEA2"; // 🚢
-    default:     return "\uD83D\uDE9A"; // 🚚
+    default:     return "\uD83D\uDE9A"; // 🚚 (road, unknown, undefined)
   }
 }
 
@@ -308,9 +311,7 @@ function applyLighting(scene: THREE.Scene, isDark: boolean) {
 }
 
 function applyHexColors(globe: any, isDark: boolean) {
-  globe
-    .hexPolygonColor((feat: any) => stableHexColor(feat, isDark))
-    .hexPolygonAltitude(isDark ? 0.01 : 0.02);
+  globe.hexPolygonColor((feat: any) => stableHexColor(feat, isDark));
 }
 
 const OCEAN_LIGHT = { color: "#1a6fa8", emissive: "#0d4f7a" };
@@ -420,7 +421,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         .hexPolygonResolution(3)
         .hexPolygonMargin(0.3)
         .hexPolygonColor((feat: any) => stableHexColor(feat, isDark))
-        .hexPolygonAltitude(isDark ? 0.01 : 0.02)
+        .hexPolygonAltitude(0.01)
         .pointsData([]).arcsData([]).ringsData([]);
 
       const scene = globe.scene() as THREE.Scene;
