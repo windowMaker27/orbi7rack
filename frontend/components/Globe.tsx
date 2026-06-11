@@ -103,8 +103,8 @@ function latitudeBiomeColor(lat: number): string {
   if (a < 17)  return "#5abb30"; 
   if (a < 22)  return "#8cc43a"; 
   if (a < 26)  return "#c4a020"; 
-  if (a < 30)  return "#d4821a"; 
-  if (a < 34)  return "#c86010";
+  if (a < 30)  return "#e29e45"; 
+  if (a < 34)  return "#ad7042";
   if (a < 38)  return "#b87820"; 
   if (a < 42)  return "#9ab040";
   if (a < 46)  return "#72a838"; 
