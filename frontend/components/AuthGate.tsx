@@ -20,6 +20,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setError("");
     setLoading(true);
     try {
@@ -46,57 +47,83 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     boxSizing: "border-box" as const,
   };
 
+  /* Style commun pour tous les boutons — touch target + tap feedback iOS */
+  const btnBase: React.CSSProperties = {
+    cursor: "pointer",
+    WebkitTapHighlightColor: "rgba(255,255,255,0.15)",
+    minHeight: 44,
+    borderRadius: 6,
+    fontFamily: "monospace",
+    touchAction: "manipulation",
+  };
+
   return (
     <div style={{
-      display: "flex", alignItems: "center", justifyContent: "center",
-      minHeight: "100dvh",      /* dvh = dynamic viewport height, correct sur iOS */
+      position: "fixed",
+      inset: 0,
+      zIndex: 9999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
       background: isLight ? "#fff5f0" : "#0a0000",
       color: isLight ? "#1a0500" : "#fff",
-      position: "relative",
       padding: "0 16px",
     }}>
       {/* Theme toggle */}
       <button
+        type="button"
         onClick={toggleTheme}
         aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
         style={{
+          ...btnBase,
           position: "absolute", top: 16, right: 16,
           background: isLight ? "#ffe5d9" : "#1a0500",
           border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
-          borderRadius: 8,
-          /* touch target 44px */
-          minWidth: 44, minHeight: 44,
+          minWidth: 44,
           padding: "6px 10px",
-          cursor: "pointer", fontSize: 18, lineHeight: 1,
+          fontSize: 18, lineHeight: 1,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
       >
         {isLight ? "🌙" : "☀️"}
       </button>
 
-      {/* Classe .auth-form : width responsive via globals.css */}
-      <form onSubmit={handleSubmit} className="auth-form" style={{
-        background: isLight ? "#fff" : "#1a0500",
-        border: "1px solid #ff440033",
-        boxShadow: isLight ? "0 4px 24px #ff440011" : "0 4px 24px #00000088",
-      }}>
+      {/*
+        action="javascript:void(0)" : filet de sécurité — si le handler JS
+        ne s'attache pas correctement, empêche tout reload natif du navigateur.
+        noValidate : désactive la validation HTML native, on gère les erreurs nous-mêmes.
+      */}
+      <form
+        onSubmit={handleSubmit}
+        action="javascript:void(0)"
+        noValidate
+        className="auth-form"
+        style={{
+          background: isLight ? "#fff" : "#1a0500",
+          border: "1px solid #ff440033",
+          boxShadow: isLight ? "0 4px 24px #ff440011" : "0 4px 24px #00000088",
+        }}
+      >
         <h1 style={{ color: "#ff4800", fontFamily: "monospace", textAlign: "center", fontSize: 20, margin: 0 }}>
           ORBI7RACK
         </h1>
 
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
-            <button key={m} type="button" onClick={() => setMode(m)} style={{
-              flex: 1,
-              padding: "10px 0",
-              minHeight: 44,
-              borderRadius: 6,
-              border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
-              background: mode === m ? `${isLight ? "#4db8ff" : "#ff4800"}` : "transparent",
-              color: mode === m ? "#fff" : isLight ? "#1a0500" : "#fff",
-              cursor: "pointer", fontFamily: "monospace",
-              fontSize: 13,
-            }}>
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              style={{
+                ...btnBase,
+                flex: 1,
+                padding: "10px 0",
+                border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
+                background: mode === m ? `${isLight ? "#4db8ff" : "#ff4800"}` : "transparent",
+                color: mode === m ? "#fff" : isLight ? "#1a0500" : "#fff",
+                fontSize: 13,
+              }}
+            >
               {m === "login" ? "Connexion" : "Inscription"}
             </button>
           ))}
@@ -142,14 +169,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           type="submit"
           disabled={loading}
           style={{
+            ...btnBase,
             padding: 12,
-            minHeight: 44,
-            borderRadius: 6,
+            width: "100%",
             border: "none",
             background: isLight ? "#4db8ff" : "#ff4800",
             color: "#fff",
-            cursor: loading ? "not-allowed" : "pointer",
-            fontFamily: "monospace",
             fontWeight: "bold",
             fontSize: 14,
             opacity: loading ? 0.7 : 1,

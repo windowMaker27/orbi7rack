@@ -6,7 +6,6 @@ import AuthGate from "@/components/AuthGate";
 import Sidebar from "@/components/Sidebar";
 import ParcelDetailModal from "@/components/ParcelDetailModal";
 import TopBar from "@/components/TopBar";
-import { ThemeProvider } from "@/context/ThemeContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useParcels } from "@/hooks/useParcels";
 import { useFlightPositions } from "@/hooks/useFlightPositions";
@@ -40,12 +39,6 @@ function slerpLatLng(
   ];
 }
 
-/**
- * Résout la position caméra cible pour un colis :
- * - live (non stale)           → coords GPS réelles
- * - simulated / stale          → position interpolée sur l'arc (slerp)
- * - pas de flightPosition      → estimated_position (centroïde pays dest)
- */
 function resolveCameraTarget(
   parcel: Parcel,
   live: any,
@@ -154,12 +147,10 @@ function GlobeWithData() {
 
 export default function Home() {
   return (
-    <ThemeProvider>
-      <AuthGate>
-        <main style={{ margin: 0, padding: 0 }}>
-          <GlobeWithData />
-        </main>
-      </AuthGate>
-    </ThemeProvider>
+    <AuthGate>
+      <main style={{ margin: 0, padding: 0 }}>
+        <GlobeWithData />
+      </main>
+    </AuthGate>
   );
 }
