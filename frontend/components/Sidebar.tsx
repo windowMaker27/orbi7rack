@@ -94,10 +94,18 @@ export default function Sidebar({
         {/* Logo image */}
         <div className="sidebar-header">
           <Image
+            src={`${assetBase}/parcel.png`}
+            alt="Orbi7rack"
+            width={55}
+            height={55}
+            style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
+            priority
+          />
+          <Image
             src={`${assetBase}/orbi7rack.png`}
             alt="Orbi7rack"
-            width={160}
-            height={48}
+            width={200}
+            height={68}
             style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
             priority
           />

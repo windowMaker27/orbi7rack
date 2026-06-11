@@ -81,7 +81,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         loop
         muted
         playsInline
-        style={{ width: "min(320px, 80vw)", height: "auto", display: "block" }}
+        style={{ width: "min(640px, 160vw)", height: "auto", display: "block" }}
       />
 
       {/* Formulaire */}
