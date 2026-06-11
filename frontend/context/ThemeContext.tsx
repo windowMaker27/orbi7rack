@@ -16,24 +16,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = localStorage.getItem("orbi_theme") as Theme | null;
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
-    }
+    const initial = (stored === "light" || stored === "dark") ? stored : "dark";
+    setTheme(initial);
+    // Applique data-theme sur <html> — pas de div wrapper qui cause
+    // un hydration mismatch SSR/client sur Safari iOS
+    document.documentElement.setAttribute("data-theme", initial);
   }, []);
 
   const toggleTheme = () => {
     setTheme(prev => {
       const next = prev === "dark" ? "light" : "dark";
       localStorage.setItem("orbi_theme", next);
+      document.documentElement.setAttribute("data-theme", next);
       return next;
     });
   };
 
+  // Pas de div wrapper — on rend les children directement
+  // pour eviter tout mismatch SSR/client
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      <div data-theme={theme} style={{ minHeight: "100vh" }}>
-        {children}
-      </div>
+      {children}
     </ThemeContext.Provider>
   );
 }
