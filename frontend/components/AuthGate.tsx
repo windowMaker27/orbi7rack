@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -14,12 +14,32 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
-  const logRef = useRef<HTMLDivElement>(null);
 
   const log = (msg: string) => {
     const ts = new Date().toISOString().slice(11, 23);
-    setLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 20));
+    setLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 30));
   };
+
+  // Scan tous les elements fixed au montage
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll("*")) as HTMLElement[];
+    const fixed = els.filter(el => {
+      const s = window.getComputedStyle(el);
+      return s.position === "fixed" || s.position === "sticky";
+    });
+    log(`Fixed/sticky elements: ${fixed.length}`);
+    fixed.forEach((el, i) => {
+      const s = window.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      const tag = el.tagName.toLowerCase();
+      const cls = el.className?.toString().slice(0, 30) || "";
+      const zi = s.zIndex;
+      const pe = s.pointerEvents;
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+      log(`#${i} <${tag}> cls="${cls}" z=${zi} pe=${pe} ${w}x${h}`);
+    });
+  }, []);
 
   if (access) return <>{children}</>;
 
@@ -28,14 +48,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    log(`handleSubmit appele — mode=${mode} user=${username}`);
+    log(`handleSubmit mode=${mode} user=${username}`);
     setError("");
     setLoading(true);
     try {
-      log("fetch en cours...");
+      log("fetch...");
       if (mode === "login") await login(username, password);
       else await register(username, email, password);
-      log("succes !");
+      log("succes!");
     } catch (err: any) {
       const msg = err.message ?? "Erreur inconnue";
       log(`ERREUR: ${msg}`);
@@ -46,69 +66,47 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   };
 
   const inputStyle: React.CSSProperties = {
-    padding: 12,
-    borderRadius: 6,
+    padding: 12, borderRadius: 6,
     border: isLight ? "1px solid #4db8ff" : "1px solid #ff440055",
     background: isLight ? "#fff5f0" : "#0d0000",
     color: isLight ? "#1a0500" : "#fff",
-    fontFamily: "monospace",
-    fontSize: 16,
-    width: "100%",
-    minHeight: 44,
+    fontFamily: "monospace", fontSize: 16,
+    width: "100%", minHeight: 44,
     boxSizing: "border-box" as const,
   };
 
   const btnBase: React.CSSProperties = {
     cursor: "pointer",
     WebkitTapHighlightColor: "rgba(255,255,255,0.15)",
-    minHeight: 44,
-    borderRadius: 6,
+    minHeight: 44, borderRadius: 6,
     fontFamily: "monospace",
     touchAction: "manipulation",
   };
 
   return (
     <div style={{
-      position: "fixed",
-      inset: 0,
-      zIndex: 9999,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
+      position: "fixed", inset: 0, zIndex: 9999,
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
       background: isLight ? "#fff5f0" : "#0a0000",
       color: isLight ? "#1a0500" : "#fff",
-      padding: "0 16px",
-      gap: 16,
+      padding: "0 16px", gap: 16,
     }}>
-      {/* Theme toggle */}
-      <button
-        type="button"
-        onClick={() => { log("toggleTheme tap"); toggleTheme(); }}
-        aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
+      <button type="button"
+        onClick={() => { log("toggleTheme"); toggleTheme(); }}
         style={{
-          ...btnBase,
-          position: "absolute", top: 16, right: 16,
+          ...btnBase, position: "absolute", top: 16, right: 16,
           background: isLight ? "#ffe5d9" : "#1a0500",
           border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
-          minWidth: 44,
-          padding: "6px 10px",
-          fontSize: 18, lineHeight: 1,
-          display: "flex", alignItems: "center", justifyContent: "center",
+          minWidth: 44, padding: "6px 10px", fontSize: 18,
         }}
-      >
-        {isLight ? "🌙" : "☀️"}
-      </button>
+      >{isLight ? "🌙" : "☀️"}</button>
 
-      <form
-        onSubmit={handleSubmit}
-        action="javascript:void(0)"
-        noValidate
+      <form onSubmit={handleSubmit} action="javascript:void(0)" noValidate
         className="auth-form"
         style={{
           background: isLight ? "#fff" : "#1a0500",
           border: "1px solid #ff440033",
-          boxShadow: isLight ? "0 4px 24px #ff440011" : "0 4px 24px #00000088",
         }}
       >
         <h1 style={{ color: "#ff4800", fontFamily: "monospace", textAlign: "center", fontSize: 20, margin: 0 }}>
@@ -117,102 +115,64 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
-            <button
-              key={m}
-              type="button"
+            <button key={m} type="button"
               onPointerUp={() => { log(`tab ${m} pointerUp`); setMode(m); }}
               style={{
-                ...btnBase,
-                flex: 1,
-                padding: "10px 0",
+                ...btnBase, flex: 1, padding: "10px 0",
                 border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
-                background: mode === m ? `${isLight ? "#4db8ff" : "#ff4800"}` : "transparent",
+                background: mode === m ? (isLight ? "#4db8ff" : "#ff4800") : "transparent",
                 color: mode === m ? "#fff" : isLight ? "#1a0500" : "#fff",
                 fontSize: 13,
               }}
-            >
-              {m === "login" ? "Connexion" : "Inscription"}
-            </button>
+            >{m === "login" ? "Connexion" : "Inscription"}</button>
           ))}
         </div>
 
-        <input
-          placeholder="Nom d'utilisateur"
-          value={username}
+        <input placeholder="Nom d'utilisateur" value={username}
           onChange={e => setUsername(e.target.value)}
           onFocus={() => log("focus: username")}
-          style={inputStyle}
-          autoComplete="username"
-          autoCapitalize="none"
-          autoCorrect="off"
+          style={inputStyle} autoComplete="username"
+          autoCapitalize="none" autoCorrect="off"
         />
-
         {mode === "register" && (
-          <input
-            type="email"
-            placeholder="Email (optionnel)"
-            value={email}
+          <input type="email" placeholder="Email (optionnel)" value={email}
             onChange={e => setEmail(e.target.value)}
-            style={inputStyle}
-            autoComplete="email"
+            style={inputStyle} autoComplete="email"
           />
         )}
-
-        <input
-          type="password"
-          placeholder="Mot de passe"
-          value={password}
+        <input type="password" placeholder="Mot de passe" value={password}
           onChange={e => setPassword(e.target.value)}
           onFocus={() => log("focus: password")}
-          style={inputStyle}
-          autoComplete="current-password"
+          style={inputStyle} autoComplete="current-password"
         />
 
-        {error && (
-          <p style={{ color: "#ff4444", fontSize: 13, margin: 0, fontFamily: "monospace" }}>
-            {error}
-          </p>
-        )}
+        {error && <p style={{ color: "#ff4444", fontSize: 13, margin: 0, fontFamily: "monospace" }}>{error}</p>}
 
-        <button
-          type="submit"
-          disabled={loading}
+        <button type="submit" disabled={loading}
           onPointerDown={() => log("submit pointerDown")}
           onPointerUp={() => log("submit pointerUp")}
           onClick={() => log("submit onClick")}
           style={{
-            ...btnBase,
-            padding: 12,
-            width: "100%",
+            ...btnBase, padding: 12, width: "100%",
             border: "none",
             background: isLight ? "#4db8ff" : "#ff4800",
-            color: "#fff",
-            fontWeight: "bold",
-            fontSize: 14,
+            color: "#fff", fontWeight: "bold", fontSize: 14,
             opacity: loading ? 0.7 : 1,
           }}
-        >
-          {loading ? "..." : mode === "login" ? "Se connecter" : "Créer le compte"}
-        </button>
+        >{loading ? "..." : mode === "login" ? "Se connecter" : "Créer le compte"}</button>
       </form>
 
-      {/* Logger visuel — DEBUG MOBILE — retirer après diagnostic */}
-      <div ref={logRef} style={{
-        width: "calc(100vw - 32px)",
-        maxWidth: 320,
-        background: "#000",
-        border: "1px solid #333",
-        borderRadius: 8,
-        padding: 10,
-        fontFamily: "monospace",
-        fontSize: 11,
-        color: "#0f0",
-        maxHeight: 160,
-        overflowY: "auto",
+      {/* Logger visuel DEBUG — retirer apres diagnostic */}
+      <div style={{
+        width: "calc(100vw - 32px)", maxWidth: 320,
+        background: "#000", border: "1px solid #333",
+        borderRadius: 8, padding: 10,
+        fontFamily: "monospace", fontSize: 11, color: "#0f0",
+        maxHeight: 200, overflowY: "auto",
         userSelect: "text",
       }}>
         {logs.length === 0
-          ? <span style={{ color: "#555" }}>En attente de taps...</span>
+          ? <span style={{ color: "#555" }}>scan en cours...</span>
           : logs.map((l, i) => <div key={i}>{l}</div>)
         }
       </div>
