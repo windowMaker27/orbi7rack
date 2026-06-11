@@ -73,16 +73,25 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         }}
       >{isLight ? "🌙" : "☀️"}</button>
 
-      {/* Logo video */}
+      {/*
+        Logo vidéo
+        - <source> avec type explicite : le navigateur choisit le premier format supporté
+        - webm en premier (Chromium/Firefox/Android)
+        - mp4 en fallback (Safari iOS/macOS — ne supporte pas webm)
+        - muted + playsInline OBLIGATOIRES pour l'autoplay iOS
+        - key={assetBase} force le rechargement quand le thème change
+      */}
       <video
         key={assetBase}
-        src={`${assetBase}/orbi7rack-video.webm`}
         autoPlay
         loop
         muted
         playsInline
         style={{ width: "min(640px, 160vw)", height: "auto", display: "block" }}
-      />
+      >
+        <source src={`${assetBase}/orbi7rack-video.webm`} type="video/webm" />
+        <source src={`${assetBase}/orbi7rack-video.mp4`} type="video/mp4" />
+      </video>
 
       {/* Formulaire */}
       <form onSubmit={handleSubmit} action="javascript:void(0)" noValidate
