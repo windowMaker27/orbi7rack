@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -13,33 +13,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
-
-  const log = (msg: string) => {
-    const ts = new Date().toISOString().slice(11, 23);
-    setLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 30));
-  };
-
-  // Scan tous les elements fixed au montage
-  useEffect(() => {
-    const els = Array.from(document.querySelectorAll("*")) as HTMLElement[];
-    const fixed = els.filter(el => {
-      const s = window.getComputedStyle(el);
-      return s.position === "fixed" || s.position === "sticky";
-    });
-    log(`Fixed/sticky elements: ${fixed.length}`);
-    fixed.forEach((el, i) => {
-      const s = window.getComputedStyle(el);
-      const r = el.getBoundingClientRect();
-      const tag = el.tagName.toLowerCase();
-      const cls = el.className?.toString().slice(0, 30) || "";
-      const zi = s.zIndex;
-      const pe = s.pointerEvents;
-      const w = Math.round(r.width);
-      const h = Math.round(r.height);
-      log(`#${i} <${tag}> cls="${cls}" z=${zi} pe=${pe} ${w}x${h}`);
-    });
-  }, []);
 
   if (access) return <>{children}</>;
 
@@ -48,18 +21,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    log(`handleSubmit mode=${mode} user=${username}`);
     setError("");
     setLoading(true);
     try {
-      log("fetch...");
       if (mode === "login") await login(username, password);
       else await register(username, email, password);
-      log("succes!");
     } catch (err: any) {
-      const msg = err.message ?? "Erreur inconnue";
-      log(`ERREUR: ${msg}`);
-      setError(msg);
+      setError(err.message ?? "Erreur inconnue");
     } finally {
       setLoading(false);
     }
@@ -93,7 +61,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       padding: "0 16px", gap: 16,
     }}>
       <button type="button"
-        onClick={() => { log("toggleTheme"); toggleTheme(); }}
+        onClick={toggleTheme}
+        aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
         style={{
           ...btnBase, position: "absolute", top: 16, right: 16,
           background: isLight ? "#ffe5d9" : "#1a0500",
@@ -116,7 +85,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
             <button key={m} type="button"
-              onPointerUp={() => { log(`tab ${m} pointerUp`); setMode(m); }}
+              onPointerUp={() => setMode(m)}
               style={{
                 ...btnBase, flex: 1, padding: "10px 0",
                 border: `1px solid ${isLight ? "#4db8ff" : "#ff4800"}`,
@@ -130,7 +99,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         <input placeholder="Nom d'utilisateur" value={username}
           onChange={e => setUsername(e.target.value)}
-          onFocus={() => log("focus: username")}
           style={inputStyle} autoComplete="username"
           autoCapitalize="none" autoCorrect="off"
         />
@@ -142,16 +110,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         )}
         <input type="password" placeholder="Mot de passe" value={password}
           onChange={e => setPassword(e.target.value)}
-          onFocus={() => log("focus: password")}
           style={inputStyle} autoComplete="current-password"
         />
 
-        {error && <p style={{ color: "#ff4444", fontSize: 13, margin: 0, fontFamily: "monospace" }}>{error}</p>}
+        {error && (
+          <p style={{ color: "#ff4444", fontSize: 13, margin: 0, fontFamily: "monospace" }}>
+            {error}
+          </p>
+        )}
 
         <button type="submit" disabled={loading}
-          onPointerDown={() => log("submit pointerDown")}
-          onPointerUp={() => log("submit pointerUp")}
-          onClick={() => log("submit onClick")}
           style={{
             ...btnBase, padding: 12, width: "100%",
             border: "none",
@@ -161,21 +129,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           }}
         >{loading ? "..." : mode === "login" ? "Se connecter" : "Créer le compte"}</button>
       </form>
-
-      {/* Logger visuel DEBUG — retirer apres diagnostic */}
-      <div style={{
-        width: "calc(100vw - 32px)", maxWidth: 320,
-        background: "#000", border: "1px solid #333",
-        borderRadius: 8, padding: 10,
-        fontFamily: "monospace", fontSize: 11, color: "#0f0",
-        maxHeight: 200, overflowY: "auto",
-        userSelect: "text",
-      }}>
-        {logs.length === 0
-          ? <span style={{ color: "#555" }}>scan en cours...</span>
-          : logs.map((l, i) => <div key={i}>{l}</div>)
-        }
-      </div>
     </div>
   );
 }
