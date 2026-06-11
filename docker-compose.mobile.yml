@@ -1,0 +1,22 @@
+# docker-compose.mobile.yml
+# Usage: make up-mobile
+# Remplace l'IP Tailscale ci-dessous par la tienne (WSL2 ou Windows)
+# Pour trouver ton IP Tailscale : tailscale ip -4
+
+services:
+  frontend:
+    build: ./frontend
+    command: npm run dev:mobile
+    volumes:
+      - ./frontend:/app
+      - frontend_nm:/app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      # ⬇️ REMPLACE PAR TON IP TAILSCALE (tailscale ip -4)
+      - NEXT_PUBLIC_API_URL=http://100.x.x.x:8000
+    depends_on:
+      - backend
+
+volumes:
+  frontend_nm:

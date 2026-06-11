@@ -1,8 +1,11 @@
-.PHONY: up down build migrate makemigrations seed-demo test shell logs restart
+.PHONY: up up-mobile down build migrate makemigrations seed seed-demo test shell logs restart
 
 # ── Docker ────────────────────────────────────────────────
 up:
 	docker compose up -d
+
+up-mobile:
+	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
 
 down:
 	docker compose down
@@ -48,8 +51,11 @@ test-cov:
 
 # ── Utilitaires ───────────────────────────────────────────
 
+seed:
+	bash scripts/seed.sh
+
 seed-demo:
-	docker compose exec backend python scripts/seed_demo.py --username $(USERNAME)
+	docker compose exec backend python scripts/seed_demo.py
 
 reset-db:
 	bash scripts/reset_db.sh
