@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import AddParcelModal from "./AddParcelModal";
 import type { Parcel } from "@/hooks/useParcels";
@@ -10,9 +10,9 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "En attente",
   in_transit: "En transit",
   out_for_delivery: "En livraison",
-  delivered: "Livré",
+  delivered: "Livr\u00e9",
   exception: "Incident",
-  expired: "Expiré",
+  expired: "Expir\u00e9",
 };
 
 const STATUS_COLORS_DARK: Record<string, string> = {
@@ -32,6 +32,10 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
   exception: "#cc2200",
   expired: "#666666",
 };
+
+const MIN_HEIGHT_VH = 18;  // sidebar réduite (~1 ligne)
+const MAX_HEIGHT_VH = 80;  // sidebar étendue
+const DEFAULT_HEIGHT_VH = 42;
 
 interface SidebarProps {
   parcels: Parcel[];
@@ -56,9 +60,60 @@ export default function Sidebar({
   parcels, loading, onSelectParcel, onParcelAdded, onDeleteParcel, theme, flightPositions = {},
 }: SidebarProps) {
   const [showAdd, setShowAdd] = useState(false);
+  const [heightVh, setHeightVh] = useState(DEFAULT_HEIGHT_VH);
   const isDark = theme === "dark";
   const STATUS_COLORS = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
+
+  // Drag handle refs
+  const handleRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number>(0);
+  const dragStartH = useRef<number>(0);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (!handle) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      isDragging.current = true;
+      dragStartY.current = e.clientY;
+      dragStartH.current = heightVh;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDragging.current) return;
+      const deltaY = dragStartY.current - e.clientY; // haut = agrandir
+      const deltaVh = (deltaY / window.innerHeight) * 100;
+      const next = Math.min(MAX_HEIGHT_VH, Math.max(MIN_HEIGHT_VH, dragStartH.current + deltaVh));
+      setHeightVh(next);
+    };
+
+    const onPointerUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      // Snap : si < 28vh → collapse, si > 65vh → full
+      setHeightVh(h => {
+        if (h < 28) return MIN_HEIGHT_VH;
+        if (h > 65) return MAX_HEIGHT_VH;
+        return DEFAULT_HEIGHT_VH;
+      });
+    };
+
+    handle.addEventListener("pointerdown", onPointerDown);
+    handle.addEventListener("pointermove", onPointerMove);
+    handle.addEventListener("pointerup", onPointerUp);
+    handle.addEventListener("pointercancel", onPointerUp);
+
+    return () => {
+      handle.removeEventListener("pointerdown", onPointerDown);
+      handle.removeEventListener("pointermove", onPointerMove);
+      handle.removeEventListener("pointerup", onPointerUp);
+      handle.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [heightVh]);
 
   const c = {
     bg:        isDark ? "rgba(10,2,0,0.92)"    : "rgba(240,237,232,0.95)",
@@ -80,32 +135,38 @@ export default function Sidebar({
 
   return (
     <>
+      {/* Logo flottant — mobile uniquement (CSS masque sur desktop) */}
+      <div className="logo-float">
+        <Image
+          src={`${assetBase}/orbi7rack.png`}
+          alt="Orbi7rack"
+          width={140}
+          height={42}
+          style={{ objectFit: "contain" }}
+          priority
+        />
+      </div>
+
       <div
         className="sidebar"
         style={{
           background: c.bg,
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-        }}
+          /* height dynamique via drag — ignoré sur desktop (CSS override) */
+          height: `${heightVh}vh`,
+        } as React.CSSProperties}
       >
-        {/* Handle drag — visible mobile uniquement (via CSS) */}
-        <div className="sidebar-handle" />
+        {/* Handle drag */}
+        <div className="sidebar-handle" ref={handleRef} />
 
-        {/* Logo image */}
+        {/* Logo dans la sidebar — desktop uniquement (CSS display:none mobile) */}
         <div className="sidebar-header">
-          <Image
-            src={`${assetBase}/parcel.png`}
-            alt="Orbi7rack"
-            width={55}
-            height={55}
-            style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
-            priority
-          />
           <Image
             src={`${assetBase}/orbi7rack.png`}
             alt="Orbi7rack"
-            width={200}
-            height={68}
+            width={160}
+            height={48}
             style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
             priority
           />
@@ -162,7 +223,7 @@ export default function Sidebar({
                         letterSpacing: 0.3,
                         flexShrink: 0,
                       }}>
-                        🕐 {staleAge}
+                        \uD83D\uDD50 {staleAge}
                       </span>
                     )}
                   </div>
@@ -181,7 +242,7 @@ export default function Sidebar({
                     </div>
                     {(parcel.origin_country || parcel.dest_country) && (
                       <span style={{ color: c.faint, fontFamily: "monospace", fontSize: 8 }}>
-                        {parcel.origin_country || "?"} → {parcel.dest_country || "?"}
+                        {parcel.origin_country || "?"} \u2192 {parcel.dest_country || "?"}
                       </span>
                     )}
                   </div>

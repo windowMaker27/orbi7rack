@@ -54,16 +54,31 @@ body {
    @media (min-width: 768px) = desktop overrides
    ═══════════════════════════════════════════════════════════ */
 
-/* ── Globe canvas ──
-   pointer-events: none : le canvas WebGL ne doit JAMAIS intercepter
-   les taps/clics — il est purement visuel. Sans ça, iOS Safari laisse
-   le canvas capturer tous les touch events même avec z-index plus bas.
-*/
+/* ── Globe canvas ── */
 .globe-container {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
+}
+
+/* ── Logo flottant (mobile only) ──────────────────────────
+   Centré horizontalement en haut de l'écran, au-dessus de tout.
+   Sur desktop ce bloc est caché (le logo vit dans .sidebar-header).
+   ─────────────────────────────────────────────────────────── */
+.logo-float {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (min-width: 768px) {
+  .logo-float { display: none; }
 }
 
 /* ── Sidebar ────────────────────────────────────────────
@@ -85,6 +100,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* transition pour le drag */
+  transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (min-width: 768px) {
@@ -97,16 +114,22 @@ body {
     border-top: none;
     border-right: 1px solid var(--border);
     border-radius: 0;
+    transition: none;
   }
 }
 
-/* Handle de drag visuel — mobile uniquement */
+/* Handle de drag — mobile uniquement */
 .sidebar-handle {
   display: flex;
   justify-content: center;
-  padding: 8px 0 4px;
+  padding: 10px 0 6px;
   flex-shrink: 0;
+  cursor: grab;
+  /* zone tactile généreuse */
+  min-height: 28px;
+  touch-action: none;
 }
+.sidebar-handle:active { cursor: grabbing; }
 .sidebar-handle::after {
   content: "";
   width: 36px;
@@ -118,17 +141,18 @@ body {
   .sidebar-handle { display: none; }
 }
 
-/* Header de la sidebar */
+/* Header de la sidebar — masqué sur mobile, visible desktop */
 .sidebar-header {
   border-bottom: 1px solid var(--border);
-  display: flex;
+  display: none; /* masqué mobile : le logo est dans .logo-float */
   align-items: center;
   gap: 0px;
   flex-shrink: 0;
 }
 @media (min-width: 768px) {
   .sidebar-header {
-    padding: 10px 0px;
+    display: flex;
+    padding: 10px 16px;
   }
 }
 
@@ -160,8 +184,8 @@ body {
 }
 
 /* ── TopBar ────────────────────────────────────────────
-   Mobile : coin supérieur droit avec marges réduites
-   Desktop : top:16 right:16
+   Mobile : colonne (profil en haut, theme en bas), coin droit
+   Desktop : ligne horizontale top:16 right:16
    ─────────────────────────────────────────────────────────── */
 .topbar {
   position: fixed;
@@ -169,14 +193,32 @@ body {
   right: 12px;
   z-index: 300;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;   /* mobile : vertical */
+  align-items: flex-end;
+  gap: 6px;
   pointer-events: auto;
 }
 @media (min-width: 768px) {
   .topbar {
     top: 16px;
     right: 16px;
+    flex-direction: row;    /* desktop : horizontal */
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+/* Bouton theme switch : height réduit sur mobile */
+.topbar-theme-switch {
+  /* override la height inline du composant */
+  height: 30px !important;
+  min-height: 30px !important;
+  width: 44px !important;
+}
+@media (min-width: 768px) {
+  .topbar-theme-switch {
+    height: 44px !important;
+    min-height: 44px !important;
   }
 }
 
@@ -300,7 +342,7 @@ body {
   }
 }
 
-/* Touch targets min 44px pour iOS (requis certif WCAG / mobile-first) */
+/* Touch targets min 44px pour iOS */
 .touch-target {
   min-height: 44px;
   min-width: 44px;
@@ -309,10 +351,7 @@ body {
   justify-content: center;
 }
 
-/*
-  Inputs : font-size 16px minimum — empêche le zoom automatique
-  d'iOS Safari sur focus (comportement natif si < 16px)
-*/
+/* Inputs : font-size 16px minimum — empêche zoom iOS sur focus */
 input,
 textarea,
 select {

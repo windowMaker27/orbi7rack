@@ -28,7 +28,7 @@ export default function TopBar() {
   };
 
   const SunIcon = () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
       stroke="#0066cc" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="5"/>
       <line x1="12" y1="1" x2="12" y2="3"/>
@@ -43,26 +43,101 @@ export default function TopBar() {
   );
 
   const MoonIcon = () => (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
       stroke="#ff6600" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   );
 
   return (
-    /* Classe CSS .topbar : position responsive via globals.css */
     <div className="topbar">
 
-      {/* ── Theme switch ── */}
+      {/* ── Avatar (en premier dans le DOM = en haut en flex-col mobile) ── */}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            background: colors.accentBg,
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: `1px solid ${colors.border}`,
+            borderRadius: 8,
+            color: colors.accent,
+            cursor: "pointer",
+            width: 36, height: 36,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "monospace", fontSize: 12, fontWeight: "bold",
+            letterSpacing: 1,
+            transition: "all 0.2s",
+          }}
+        >
+          {initials}
+        </button>
+
+        {open && (
+          <div style={{
+            position: "absolute", top: 44, right: 0,
+            background: colors.bg,
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: `1px solid ${colors.border}`,
+            borderRadius: 10,
+            minWidth: 180,
+            overflow: "hidden",
+            boxShadow: isDark
+              ? "0 8px 32px rgba(0,0,0,0.6)"
+              : "0 8px 32px rgba(0,0,0,0.12)",
+          }}>
+            <div style={{
+              padding: "12px 16px",
+              borderBottom: `1px solid ${colors.divider}`,
+            }}>
+              <div style={{ color: colors.muted, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>
+                CONNECT\u00c9 EN TANT QUE
+              </div>
+              <div style={{ color: colors.accent, fontFamily: "monospace", fontSize: 13, fontWeight: "bold" }}>
+                {username ?? "\u2014"}
+              </div>
+            </div>
+
+            <button
+              onClick={() => { setOpen(false); logout(); }}
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: colors.danger,
+                fontFamily: "monospace",
+                fontSize: 12,
+                padding: "14px 16px",
+                minHeight: 44,
+                textAlign: "left",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = colors.dangerBg)}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <span>\u23FB</span> D\u00e9connexion
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Theme switch (en dessous en flex-col mobile) ── */}
       <button
         role="switch"
         aria-checked={isDark}
         aria-label={isDark ? "Passer en mode clair" : "Passer en mode sombre"}
+        className="topbar-theme-switch"
         onClick={toggleTheme}
         style={{
           position: "relative",
-          width: 54,
-          height: 44,          /* touch target 44px */
+          width: 44,
+          /* height géré par .topbar-theme-switch en CSS */
           borderRadius: 999,
           border: `1.5px solid ${colors.switchBorder}`,
           background: colors.switchTrack,
@@ -81,9 +156,9 @@ export default function TopBar() {
           position: "absolute",
           top: "50%",
           transform: "translateY(-50%)",
-          left: isDark ? 28 : 4,
-          width: 20,
-          height: 20,
+          left: isDark ? 22 : 4,
+          width: 16,
+          height: 16,
           borderRadius: "50%",
           background: colors.switchThumb,
           boxShadow: isDark
@@ -98,83 +173,6 @@ export default function TopBar() {
           {isDark ? <MoonIcon /> : <SunIcon />}
         </span>
       </button>
-
-      {/* ── Avatar ── */}
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{
-            background: colors.accentBg,
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            border: `1px solid ${colors.border}`,
-            borderRadius: 8,
-            color: colors.accent,
-            cursor: "pointer",
-            /* touch target 44px */
-            width: 44, height: 44,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "monospace", fontSize: 13, fontWeight: "bold",
-            letterSpacing: 1,
-            transition: "all 0.2s",
-          }}
-        >
-          {initials}
-        </button>
-
-        {open && (
-          <div style={{
-            position: "absolute", top: 52, right: 0,
-            background: colors.bg,
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            border: `1px solid ${colors.border}`,
-            borderRadius: 10,
-            minWidth: 180,
-            overflow: "hidden",
-            boxShadow: isDark
-              ? "0 8px 32px rgba(0,0,0,0.6)"
-              : "0 8px 32px rgba(0,0,0,0.12)",
-          }}>
-            <div style={{
-              padding: "12px 16px",
-              borderBottom: `1px solid ${colors.divider}`,
-            }}>
-              <div style={{ color: colors.muted, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>
-                CONNECTÉ EN TANT QUE
-              </div>
-              <div style={{ color: colors.accent, fontFamily: "monospace", fontSize: 13, fontWeight: "bold" }}>
-                {username ?? "—"}
-              </div>
-            </div>
-
-            <button
-              onClick={() => { setOpen(false); logout(); }}
-              style={{
-                width: "100%",
-                background: "transparent",
-                border: "none",
-                color: colors.danger,
-                fontFamily: "monospace",
-                fontSize: 12,
-                /* touch target */
-                padding: "14px 16px",
-                minHeight: 44,
-                textAlign: "left",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = colors.dangerBg)}
-              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-            >
-              <span>⏻</span> Déconnexion
-            </button>
-          </div>
-        )}
-      </div>
 
       {open && (
         <div
