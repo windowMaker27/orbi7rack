@@ -1,4 +1,4 @@
-.PHONY: up up-mobile down build migrate makemigrations seed seed-demo test shell logs restart
+.PHONY: up up-mobile down build migrate makemigrations seed seed-demo test shell logs restart re re-mobile
 
 # ── Docker ────────────────────────────────────────────────
 up:
@@ -13,6 +13,10 @@ down:
 re:
 	docker compose down
 	docker compose up -d
+
+re-mobile:
+	docker compose down
+	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
 
 build:
 	docker compose build

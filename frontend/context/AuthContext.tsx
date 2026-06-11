@@ -24,6 +24,27 @@ const STORAGE_KEYS = {
   username: "orbi_username",
 };
 
+/** fetch avec timeout — évite le hang silencieux sur mobile si l'API est sur localhost */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(
+        `Impossible de joindre le serveur (timeout).\n` +
+        `Sur mobile, vérifiez que NEXT_PUBLIC_API_URL pointe sur l'IP LAN/Tailscale et non localhost.\n` +
+        `Valeur actuelle : ${API}`
+      );
+    }
+    throw new Error("Erreur réseau — vérifiez votre connexion");
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({
     access: null,
@@ -47,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = useCallback(async (username: string, password: string) => {
-    const res = await fetch(`${API}/api/auth/token/`, {
+    const res = await fetchWithTimeout(`${API}/api/auth/token/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -58,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {
-    const res = await fetch(`${API}/api/auth/register/`, {
+    const res = await fetchWithTimeout(`${API}/api/auth/register/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, password }),

@@ -23,8 +23,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" suppressHydrationWarning>
       <head>
-        {/* Viewport obligatoire pour mobile — sans ça Safari iOS zoom et casse les touch events */}
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        {/*
+          Viewport mobile — NE PAS mettre maximum-scale=1 ni user-scalable=no :
+          - maximum-scale=1 bloque certains touch events sur iOS Safari
+          - user-scalable=no est interdit par les directives d'accessibilité WCAG
+          initial-scale=1 suffit pour empêcher le zoom auto sur les inputs
+          (on force font-size:16px sur les inputs à la place)
+        */}
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body suppressHydrationWarning>
         <AuthProvider>
