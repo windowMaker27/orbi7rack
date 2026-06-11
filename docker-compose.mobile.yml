@@ -14,6 +14,11 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://${TAILSCALE_IP}:8000
+      # Indique a Next sur quelle IP le client HMR doit se connecter.
+      # Sans ca, Next injecte localhost dans le websocket HMR,
+      # que Safari iOS refuse car cross-origin -> React ne s'hydrate pas.
+      - NEXT_PUBLIC_DEV_ORIGIN=http://${TAILSCALE_IP}:3000
+      - HOSTNAME=0.0.0.0
     depends_on:
       - backend
 
