@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -13,6 +13,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const log = (msg: string) => {
+    const ts = new Date().toISOString().slice(11, 23);
+    setLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 20));
+  };
 
   if (access) return <>{children}</>;
 
@@ -21,19 +28,23 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    log(`handleSubmit appele — mode=${mode} user=${username}`);
     setError("");
     setLoading(true);
     try {
+      log("fetch en cours...");
       if (mode === "login") await login(username, password);
       else await register(username, email, password);
+      log("succes !");
     } catch (err: any) {
-      setError(err.message ?? "Erreur réseau — vérifiez votre connexion");
+      const msg = err.message ?? "Erreur inconnue";
+      log(`ERREUR: ${msg}`);
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  /* font-size 16px sur tous les inputs : empêche le zoom auto Safari iOS */
   const inputStyle: React.CSSProperties = {
     padding: 12,
     borderRadius: 6,
@@ -47,7 +58,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     boxSizing: "border-box" as const,
   };
 
-  /* Style commun pour tous les boutons — touch target + tap feedback iOS */
   const btnBase: React.CSSProperties = {
     cursor: "pointer",
     WebkitTapHighlightColor: "rgba(255,255,255,0.15)",
@@ -63,16 +73,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       inset: 0,
       zIndex: 9999,
       display: "flex",
+      flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
       background: isLight ? "#fff5f0" : "#0a0000",
       color: isLight ? "#1a0500" : "#fff",
       padding: "0 16px",
+      gap: 16,
     }}>
       {/* Theme toggle */}
       <button
         type="button"
-        onClick={toggleTheme}
+        onClick={() => { log("toggleTheme tap"); toggleTheme(); }}
         aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
         style={{
           ...btnBase,
@@ -88,11 +100,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         {isLight ? "🌙" : "☀️"}
       </button>
 
-      {/*
-        action="javascript:void(0)" : filet de sécurité — si le handler JS
-        ne s'attache pas correctement, empêche tout reload natif du navigateur.
-        noValidate : désactive la validation HTML native, on gère les erreurs nous-mêmes.
-      */}
       <form
         onSubmit={handleSubmit}
         action="javascript:void(0)"
@@ -113,7 +120,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             <button
               key={m}
               type="button"
-              onClick={() => setMode(m)}
+              onPointerUp={() => { log(`tab ${m} pointerUp`); setMode(m); }}
               style={{
                 ...btnBase,
                 flex: 1,
@@ -133,6 +140,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           placeholder="Nom d'utilisateur"
           value={username}
           onChange={e => setUsername(e.target.value)}
+          onFocus={() => log("focus: username")}
           style={inputStyle}
           autoComplete="username"
           autoCapitalize="none"
@@ -155,6 +163,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           placeholder="Mot de passe"
           value={password}
           onChange={e => setPassword(e.target.value)}
+          onFocus={() => log("focus: password")}
           style={inputStyle}
           autoComplete="current-password"
         />
@@ -168,6 +177,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         <button
           type="submit"
           disabled={loading}
+          onPointerDown={() => log("submit pointerDown")}
+          onPointerUp={() => log("submit pointerUp")}
+          onClick={() => log("submit onClick")}
           style={{
             ...btnBase,
             padding: 12,
@@ -183,6 +195,27 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           {loading ? "..." : mode === "login" ? "Se connecter" : "Créer le compte"}
         </button>
       </form>
+
+      {/* Logger visuel — DEBUG MOBILE — retirer après diagnostic */}
+      <div ref={logRef} style={{
+        width: "calc(100vw - 32px)",
+        maxWidth: 320,
+        background: "#000",
+        border: "1px solid #333",
+        borderRadius: 8,
+        padding: 10,
+        fontFamily: "monospace",
+        fontSize: 11,
+        color: "#0f0",
+        maxHeight: 160,
+        overflowY: "auto",
+        userSelect: "text",
+      }}>
+        {logs.length === 0
+          ? <span style={{ color: "#555" }}>En attente de taps...</span>
+          : logs.map((l, i) => <div key={i}>{l}</div>)
+        }
+      </div>
     </div>
   );
 }
