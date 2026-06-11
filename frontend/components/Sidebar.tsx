@@ -33,8 +33,8 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
   expired: "#666666",
 };
 
-const MIN_HEIGHT_VH = 18;  // sidebar réduite (~1 ligne)
-const MAX_HEIGHT_VH = 80;  // sidebar étendue
+const MIN_HEIGHT_VH = 18;
+const MAX_HEIGHT_VH = 80;
 const DEFAULT_HEIGHT_VH = 42;
 
 interface SidebarProps {
@@ -65,7 +65,6 @@ export default function Sidebar({
   const STATUS_COLORS = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
-  // Drag handle refs
   const handleRef = useRef<HTMLDivElement>(null);
   const dragStartY = useRef<number>(0);
   const dragStartH = useRef<number>(0);
@@ -85,7 +84,7 @@ export default function Sidebar({
 
     const onPointerMove = (e: PointerEvent) => {
       if (!isDragging.current) return;
-      const deltaY = dragStartY.current - e.clientY; // haut = agrandir
+      const deltaY = dragStartY.current - e.clientY;
       const deltaVh = (deltaY / window.innerHeight) * 100;
       const next = Math.min(MAX_HEIGHT_VH, Math.max(MIN_HEIGHT_VH, dragStartH.current + deltaVh));
       setHeightVh(next);
@@ -94,7 +93,6 @@ export default function Sidebar({
     const onPointerUp = () => {
       if (!isDragging.current) return;
       isDragging.current = false;
-      // Snap : si < 28vh → collapse, si > 65vh → full
       setHeightVh(h => {
         if (h < 28) return MIN_HEIGHT_VH;
         if (h > 65) return MAX_HEIGHT_VH;
@@ -138,10 +136,10 @@ export default function Sidebar({
       {/* Logo flottant — mobile uniquement (CSS masque sur desktop) */}
       <div className="logo-float">
         <Image
-          src={`${assetBase}/orbi7rack.png`}
+          src={`${assetBase}/logo.png`}
           alt="Orbi7rack"
-          width={140}
-          height={42}
+          width={180}
+          height={54}
           style={{ objectFit: "contain" }}
           priority
         />
@@ -153,7 +151,6 @@ export default function Sidebar({
           background: c.bg,
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          /* height dynamique via drag — ignoré sur desktop (CSS override) */
           height: `${heightVh}vh`,
         } as React.CSSProperties}
       >
@@ -163,10 +160,10 @@ export default function Sidebar({
         {/* Logo dans la sidebar — desktop uniquement (CSS display:none mobile) */}
         <div className="sidebar-header">
           <Image
-            src={`${assetBase}/orbi7rack.png`}
+            src={`${assetBase}/logo.png`}
             alt="Orbi7rack"
-            width={160}
-            height={48}
+            width={200}
+            height={60}
             style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
             priority
           />

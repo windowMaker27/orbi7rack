@@ -62,10 +62,7 @@ body {
   pointer-events: none;
 }
 
-/* ── Logo flottant (mobile only) ──────────────────────────
-   Centré horizontalement en haut de l'écran, au-dessus de tout.
-   Sur desktop ce bloc est caché (le logo vit dans .sidebar-header).
-   ─────────────────────────────────────────────────────────── */
+/* ── Logo flottant (mobile only) ────────────────────────── */
 .logo-float {
   position: fixed;
   top: 14px;
@@ -81,10 +78,7 @@ body {
   .logo-float { display: none; }
 }
 
-/* ── Sidebar ────────────────────────────────────────────
-   Mobile (défaut) : bottom sheet en bas de l'écran
-   Desktop (768px+) : panneau latéral gauche fixe
-   ─────────────────────────────────────────────────────────── */
+/* ── Sidebar ──────────────────────────────────────────── */
 .sidebar {
   position: fixed;
   left: 0;
@@ -100,7 +94,6 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* transition pour le drag */
   transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -125,7 +118,6 @@ body {
   padding: 10px 0 6px;
   flex-shrink: 0;
   cursor: grab;
-  /* zone tactile généreuse */
   min-height: 28px;
   touch-action: none;
 }
@@ -144,7 +136,7 @@ body {
 /* Header de la sidebar — masqué sur mobile, visible desktop */
 .sidebar-header {
   border-bottom: 1px solid var(--border);
-  display: none; /* masqué mobile : le logo est dans .logo-float */
+  display: none;
   align-items: center;
   gap: 0px;
   flex-shrink: 0;
@@ -171,7 +163,6 @@ body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* Safe area iPhone (notch / home bar) */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .sidebar-footer {
     padding-bottom: calc(8px + env(safe-area-inset-bottom));
@@ -183,17 +174,14 @@ body {
   }
 }
 
-/* ── TopBar ────────────────────────────────────────────
-   Mobile : colonne (profil en haut, theme en bas), coin droit
-   Desktop : ligne horizontale top:16 right:16
-   ─────────────────────────────────────────────────────────── */
+/* ── TopBar ──────────────────────────────────────────── */
 .topbar {
   position: fixed;
   top: 12px;
   right: 12px;
   z-index: 300;
   display: flex;
-  flex-direction: column;   /* mobile : vertical */
+  flex-direction: column;
   align-items: flex-end;
   gap: 6px;
   pointer-events: auto;
@@ -202,30 +190,20 @@ body {
   .topbar {
     top: 16px;
     right: 16px;
-    flex-direction: row;    /* desktop : horizontal */
+    flex-direction: row;
     align-items: center;
     gap: 8px;
   }
 }
 
-/* Bouton theme switch : height réduit sur mobile */
+/* Bouton theme switch : height réduit partout (mobile + desktop) */
 .topbar-theme-switch {
-  /* override la height inline du composant */
   height: 30px !important;
   min-height: 30px !important;
   width: 44px !important;
 }
-@media (min-width: 768px) {
-  .topbar-theme-switch {
-    height: 44px !important;
-    min-height: 44px !important;
-  }
-}
 
-/* ── ParcelDetailModal ─────────────────────────────────────
-   Mobile : bottom sheet pleine largeur
-   Desktop : panneau flottant à droite
-   ─────────────────────────────────────────────────────────── */
+/* ── ParcelDetailModal ───────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -275,10 +253,7 @@ body {
   }
 }
 
-/* ── AddParcelModal ───────────────────────────────────────
-   Mobile : bottom sheet
-   Desktop : dialog centré
-   ─────────────────────────────────────────────────────────── */
+/* ── AddParcelModal ─────────────────────────────────────── */
 .add-modal-overlay {
   position: fixed;
   inset: 0;
@@ -322,10 +297,7 @@ body {
   }
 }
 
-/* ── AuthGate ────────────────────────────────────────────
-   Mobile : pleine largeur avec marges
-   Desktop : largeur fixe 320px
-   ─────────────────────────────────────────────────────────── */
+/* ── AuthGate ──────────────────────────────────────────── */
 .auth-form {
   width: calc(100vw - 32px);
   max-width: 320px;
