@@ -39,7 +39,6 @@ interface SidebarProps {
   onParcelAdded: (parcel: Parcel) => void;
   onDeleteParcel: (id: number) => void;
   theme: Theme;
-  /** Map parcelId → FlightPosition pour afficher le badge stale */
   flightPositions?: Record<number, { stale?: boolean; stale_since?: string | null }>;
 }
 
@@ -79,28 +78,26 @@ export default function Sidebar({
 
   return (
     <>
-      <div style={{
-        position: "fixed", top: 0, left: 0, bottom: 0,
-        width: 260, zIndex: 100,
-        background: c.bg,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        borderRight: `1px solid ${c.border}`,
-        display: "flex", flexDirection: "column",
-        overflow: "hidden",
-      }}>
+      <div
+        className="sidebar"
+        style={{
+          background: c.bg,
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+        }}
+      >
+        {/* Handle drag — visible mobile uniquement (via CSS) */}
+        <div className="sidebar-handle" />
+
         {/* Logo / titre */}
-        <div style={{
-          padding: "18px 16px 12px",
-          borderBottom: `1px solid ${c.border}`,
-          display: "flex", alignItems: "center", gap: 10,
-        }}>
+        <div className="sidebar-header">
           <div style={{
             width: 28, height: 28,
             background: c.accent,
             borderRadius: 6,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 14,
+            flexShrink: 0,
           }}>📦</div>
           <div>
             <div style={{ color: c.accent, fontFamily: "monospace", fontSize: 12, fontWeight: "bold", letterSpacing: 2 }}>ORBI7RACK</div>
@@ -109,7 +106,7 @@ export default function Sidebar({
         </div>
 
         {/* Liste */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px", scrollbarWidth: "thin" }}>
+        <div className="sidebar-list">
           {loading ? (
             <div style={{ color: c.muted, fontFamily: "monospace", fontSize: 11, textAlign: "center", marginTop: 40 }}>
               Chargement...
@@ -136,12 +133,13 @@ export default function Sidebar({
                     padding: "9px 12px",
                     marginBottom: 6,
                     cursor: "pointer",
+                    /* Touch target min 44px */
+                    minHeight: 44,
                     transition: "background 150ms ease, border-color 150ms ease",
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = c.cardHov)}
                   onMouseLeave={e => (e.currentTarget.style.background = c.card)}
                 >
-                  {/* Ligne 1 : tracking + badge stale */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <div style={{ color: c.text, fontFamily: "monospace", fontSize: 10, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isStale ? 130 : "100%" }}>
                       {parcel.tracking_number}
@@ -164,7 +162,6 @@ export default function Sidebar({
                     )}
                   </div>
 
-                  {/* Ligne 2 : statut + route */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <div style={{
@@ -190,7 +187,7 @@ export default function Sidebar({
         </div>
 
         {/* Bouton ajout */}
-        <div style={{ padding: "10px 10px", borderTop: `1px solid ${c.border}` }}>
+        <div className="sidebar-footer">
           <button
             onClick={() => setShowAdd(true)}
             style={{
@@ -202,6 +199,8 @@ export default function Sidebar({
               fontFamily: "monospace",
               fontSize: 11,
               padding: "9px 0",
+              /* Touch target */
+              minHeight: 44,
               cursor: "pointer",
               letterSpacing: 1,
               transition: "all 150ms ease",

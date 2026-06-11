@@ -48,3 +48,260 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE-FIRST LAYOUT
+   Par défaut = mobile. @media (min-width: 768px) = desktop.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Globe canvas ── */
+.globe-container {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────
+   Mobile : bottom sheet (hauteur fixe en bas)
+   Desktop : panneau latéral gauche fixe
+   ─────────────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: 100%;
+  height: 42vh;
+  z-index: 100;
+  border-top: 1px solid var(--border);
+  border-right: none;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    width: 260px;
+    height: auto;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+  }
+}
+
+/* Handle de drag visuel sur mobile */
+.sidebar-handle {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+  flex-shrink: 0;
+}
+.sidebar-handle::after {
+  content: "";
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+@media (min-width: 768px) {
+  .sidebar-handle { display: none; }
+}
+
+/* Header de la sidebar */
+.sidebar-header {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+@media (min-width: 768px) {
+  .sidebar-header {
+    padding: 18px 16px 12px;
+  }
+}
+
+/* Liste scrollable */
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  scrollbar-width: thin;
+  /* iOS momentum scroll */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Footer bouton ajout */
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+/* Safe area pour iPhone (notch/home bar) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .sidebar-footer {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── TopBar ─────────────────────────────────────────────────
+   Mobile : coin supérieur droit mais décalé pour ne pas déborder
+   Desktop : top:16 right:16
+   ─────────────────────────────────────────────────────────── */
+.topbar {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+@media (min-width: 768px) {
+  .topbar {
+    top: 16px;
+    right: 16px;
+  }
+}
+
+/* ── ParcelDetailModal ──────────────────────────────────────
+   Mobile : bottom sheet pleine largeur
+   Desktop : panneau flottant à droite
+   ─────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: transparent;
+  pointer-events: auto;
+  /* Mobile : aligner en bas */
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+@media (min-width: 768px) {
+  .modal-overlay {
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 80px;
+  }
+}
+
+.modal-panel {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 16px 16px 0 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+@media (min-width: 768px) {
+  .modal-panel {
+    width: 320px;
+    max-height: 75vh;
+    border-radius: 12px;
+  }
+}
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .modal-panel {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .modal-panel {
+      padding-bottom: 20px;
+    }
+  }
+}
+
+/* ── AddParcelModal ─────────────────────────────────────────
+   Mobile : bottom sheet
+   Desktop : dialog centré
+   ─────────────────────────────────────────────────────────── */
+.add-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+@media (min-width: 768px) {
+  .add-modal-overlay {
+    align-items: center;
+  }
+}
+
+.add-modal-panel {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (min-width: 768px) {
+  .add-modal-panel {
+    width: 380px;
+    max-width: 380px;
+    border-radius: 12px;
+    padding: 32px;
+  }
+}
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .add-modal-panel {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .add-modal-panel {
+      padding-bottom: 32px;
+    }
+  }
+}
+
+/* ── AuthGate ───────────────────────────────────────────────
+   Le form de login doit être bien dimensionné sur petit écran
+   ─────────────────────────────────────────────────────────── */
+.auth-form {
+  width: calc(100vw - 32px);
+  max-width: 320px;
+  border-radius: 12px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (min-width: 768px) {
+  .auth-form {
+    width: 320px;
+    padding: 32px;
+  }
+}
+
+/* Touch targets min 44px pour iOS (certif) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inputs : empêche le zoom auto iOS (font-size >= 16px) */
+.mobile-input {
+  font-size: 16px !important;
+}

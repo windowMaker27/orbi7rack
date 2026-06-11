@@ -102,30 +102,16 @@ export default function ParcelDetailModal({
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 200,
-        background: "transparent",
-        pointerEvents: "auto",
-        display: "flex", alignItems: "center", justifyContent: "flex-end",
-        paddingRight: 80,
-      }}
-    >
+    /* .modal-overlay : flex-end mobile, flex-end+paddingRight desktop (globals.css) */
+    <div className="modal-overlay" onClick={onClose}>
       <div
+        className="modal-panel"
         onClick={e => e.stopPropagation()}
         style={{
           background: c.bg,
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
           border: `1px solid ${c.border}`,
-          borderRadius: 12,
-          padding: 20,
-          width: 320,
-          maxHeight: "75vh",
-          overflowY: "auto",
-          scrollbarWidth: "thin",
-          display: "flex", flexDirection: "column", gap: 12,
         }}
       >
         {/* Header */}
@@ -133,7 +119,10 @@ export default function ParcelDetailModal({
           <h2 style={{ color: c.accent, fontFamily: "monospace", fontSize: 11, letterSpacing: 3, textTransform: "uppercase", margin: 0 }}>
             Détail colis
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: c.accentLbl, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", color: c.accentLbl, cursor: "pointer", fontSize: 16, lineHeight: 1, minHeight: 44, minWidth: 44, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >✕</button>
         </div>
 
         {/* Tracking number */}
@@ -159,7 +148,6 @@ export default function ParcelDetailModal({
           ))}
         </div>
 
-        {/* Bannière stale avec durée */}
         {isStale && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: c.warnBg, border: `1px solid ${c.warnBdr}`, borderRadius: 8, padding: "8px 12px" }}>
             <span style={{ fontSize: 13, marginTop: 1 }}>⚠️</span>
@@ -172,7 +160,6 @@ export default function ParcelDetailModal({
           </div>
         )}
 
-        {/* Switch ARC / LIVE */}
         {showModeSwitch && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: c.accentDim, border: `1px solid ${c.accentBdr}`, borderRadius: 8, padding: "8px 12px" }}>
             <span style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 9, letterSpacing: 2 }}>MODE POSITION</span>
@@ -188,7 +175,9 @@ export default function ParcelDetailModal({
                       border: `1px solid ${isActive ? c.accent : c.accentBdr}`,
                       borderRadius: 4, color: isActive ? c.accent : c.accentLbl,
                       fontFamily: "monospace", fontSize: 9, letterSpacing: 1,
-                      padding: "4px 10px", cursor: "pointer",
+                      padding: "4px 10px",
+                      minHeight: 44,
+                      cursor: "pointer",
                       textTransform: "uppercase", transition: "all 150ms ease",
                     }}
                   >{m === "arc" ? "🛤 ARC" : "📡 LIVE"}</button>
@@ -198,26 +187,14 @@ export default function ParcelDetailModal({
           </div>
         )}
 
-        {/* Position live */}
         {flightPosition && (
           <div style={{ background: c.accentDim, border: `1px solid ${isStale ? c.warnBdr : c.accentBdr}`, borderRadius: 8, padding: "8px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 2 }}>
                 POSITION{isStale ? " 🟡 CACHE" : flightPosition.source === "live" ? " 🟢 LIVE" : " ⏳ SIMULÉE"}
               </div>
-              {/* Badge stale durée */}
               {isStale && staleLabel && (
-                <span style={{
-                  background: c.warnBg,
-                  border: `1px solid ${c.warnBdr}`,
-                  borderRadius: 20,
-                  color: c.warning,
-                  fontFamily: "monospace",
-                  fontSize: 8,
-                  padding: "2px 7px",
-                  letterSpacing: 0.5,
-                  whiteSpace: "nowrap",
-                }}>
+                <span style={{ background: c.warnBg, border: `1px solid ${c.warnBdr}`, borderRadius: 20, color: c.warning, fontFamily: "monospace", fontSize: 8, padding: "2px 7px", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                   🕐 {staleLabel}
                 </span>
               )}
@@ -234,7 +211,6 @@ export default function ParcelDetailModal({
           </div>
         )}
 
-        {/* Position estimée DB */}
         {pos && !flightPosition && (
           <div style={{ background: c.accentDim, border: `1px solid ${c.accentBdr}`, borderRadius: 8, padding: "8px 12px" }}>
             <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 2, marginBottom: 4 }}>POSITION</div>
@@ -243,7 +219,6 @@ export default function ParcelDetailModal({
           </div>
         )}
 
-        {/* Historique events */}
         {parcel.events.length > 0 && (
           <div>
             <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 8, fontWeight: "bold" }}>
@@ -253,12 +228,7 @@ export default function ParcelDetailModal({
               {parcel.events.map((event, i) => (
                 <div key={event.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 3 }}>
-                    <div style={{
-                      width: 6, height: 6, borderRadius: "50%",
-                      background: i === 0 ? statusColor : c.timelineDot,
-                      flexShrink: 0,
-                      boxShadow: i === 0 && isDark ? `0 0 5px ${statusColor}` : "none",
-                    }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: i === 0 ? statusColor : c.timelineDot, flexShrink: 0, boxShadow: i === 0 && isDark ? `0 0 5px ${statusColor}` : "none" }} />
                     {i < parcel.events.length - 1 && (
                       <div style={{ width: 1, flex: 1, minHeight: 12, background: c.timelineLine, margin: "2px 0" }} />
                     )}
@@ -282,14 +252,12 @@ export default function ParcelDetailModal({
           </div>
         )}
 
-        {/* Sync info */}
         {parcel.last_synced_at && (
           <div style={{ color: c.faint, fontFamily: "monospace", fontSize: 9, textAlign: "right" }}>
             Sync : {new Date(parcel.last_synced_at).toLocaleString("fr-FR")}
           </div>
         )}
 
-        {/* Supprimer */}
         <div style={{ borderTop: `1px solid ${c.border}`, paddingTop: 12, marginTop: 4 }}>
           {!confirmDelete ? (
             <button
@@ -300,7 +268,9 @@ export default function ParcelDetailModal({
                 border: `1px solid ${c.dangerBdr}`,
                 borderRadius: 8, color: c.danger,
                 fontFamily: "monospace", fontSize: 11,
-                padding: "9px 0", cursor: "pointer",
+                padding: "9px 0",
+                minHeight: 44,
+                cursor: "pointer",
                 transition: "all 0.15s",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}
@@ -317,23 +287,11 @@ export default function ParcelDetailModal({
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   onClick={() => { onDelete(parcel.id); onClose(); }}
-                  style={{
-                    flex: 1, background: c.dangerBg,
-                    border: `1px solid ${c.dangerBdr}`,
-                    borderRadius: 6, color: c.danger,
-                    fontFamily: "monospace", fontSize: 11,
-                    padding: "8px 0", cursor: "pointer",
-                  }}
+                  style={{ flex: 1, background: c.dangerBg, border: `1px solid ${c.dangerBdr}`, borderRadius: 6, color: c.danger, fontFamily: "monospace", fontSize: 11, padding: "8px 0", minHeight: 44, cursor: "pointer" }}
                 >Oui, supprimer</button>
                 <button
                   onClick={() => setConfirmDelete(false)}
-                  style={{
-                    flex: 1, background: c.card,
-                    border: `1px solid ${c.cardBdr}`,
-                    borderRadius: 6, color: c.muted,
-                    fontFamily: "monospace", fontSize: 11,
-                    padding: "8px 0", cursor: "pointer",
-                  }}
+                  style={{ flex: 1, background: c.card, border: `1px solid ${c.cardBdr}`, borderRadius: 6, color: c.muted, fontFamily: "monospace", fontSize: 11, padding: "8px 0", minHeight: 44, cursor: "pointer" }}
                 >Annuler</button>
               </div>
             </div>

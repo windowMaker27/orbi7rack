@@ -21,17 +21,19 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  /* font-size: 16px obligatoire sur iOS pour éviter le zoom auto sur focus input */
   const inputStyle: React.CSSProperties = {
-    padding: 10,
+    padding: 12,
     borderRadius: 6,
     border: "1px solid rgba(255,68,0,0.3)",
     background: "rgba(0,0,0,0.4)",
     color: "#fff",
     fontFamily: "monospace",
-    fontSize: 13,
+    fontSize: 16,
     outline: "none",
     width: "100%",
     boxSizing: "border-box",
+    minHeight: 44,
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,27 +69,16 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 200,
-        background: "rgba(0,0,0,0.6)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
-    >
+    /* .add-modal-overlay : alignItems flex-end mobile, center desktop */
+    <div className="add-modal-overlay" onClick={onClose}>
       <div
+        className="add-modal-panel"
         onClick={e => e.stopPropagation()}
         style={{
           background: "rgba(15,3,0,0.92)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
           border: "1px solid rgba(255,68,0,0.25)",
-          borderRadius: 12,
-          padding: 32,
-          width: 380,
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -101,6 +92,8 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
           <button onClick={onClose} style={{
             background: "none", border: "none", color: "#ff440088",
             cursor: "pointer", fontSize: 18, lineHeight: 1,
+            minHeight: 44, minWidth: 44,
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}>✕</button>
         </div>
 
@@ -114,7 +107,9 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
               value={trackingNumber}
               onChange={e => setTrackingNumber(e.target.value)}
               style={inputStyle}
-              autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
             />
           </div>
 
@@ -127,6 +122,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
               value={carrier}
               onChange={e => setCarrier(e.target.value)}
               style={inputStyle}
+              autoComplete="off"
             />
           </div>
 
@@ -139,6 +135,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
               value={description}
               onChange={e => setDescription(e.target.value)}
               style={inputStyle}
+              autoComplete="off"
             />
           </div>
 
@@ -153,7 +150,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
             disabled={loading || !trackingNumber.trim()}
             style={{
               marginTop: 4,
-              padding: "10px 0",
+              padding: "12px 0",
               borderRadius: 6,
               border: "none",
               background: loading || !trackingNumber.trim() ? "#ff440044" : "#ff4400",
@@ -161,9 +158,10 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
               cursor: loading || !trackingNumber.trim() ? "not-allowed" : "pointer",
               fontFamily: "monospace",
               fontWeight: "bold",
-              fontSize: 13,
+              fontSize: 14,
               letterSpacing: 1,
               transition: "background 0.2s",
+              minHeight: 44,
             }}
           >
             {loading ? "Synchronisation 17TRACK..." : "Ajouter"}

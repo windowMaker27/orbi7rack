@@ -22,14 +22,11 @@ export default function TopBar() {
     divider:  isDark ? "rgba(255,68,0,0.15)" : "rgba(0,102,204,0.15)",
     danger:   isDark ? "#ff4444"             : "#cc2200",
     dangerBg: isDark ? "rgba(255,68,0,0.1)"  : "rgba(204,34,0,0.08)",
-    // switch-specific
     switchBorder:  isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)",
     switchTrack:   isDark ? "rgba(255,68,0,0.08)"  : "rgba(0,102,204,0.07)",
     switchThumb:   isDark ? "#ff6600"              : "#0066cc",
-    switchIcon:    isDark ? "#ff6600"              : "#0066cc",
   };
 
-  // Sun SVG (light mode thumb)
   const SunIcon = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
       stroke="#0066cc" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -45,7 +42,6 @@ export default function TopBar() {
     </svg>
   );
 
-  // Moon SVG (dark mode thumb)
   const MoonIcon = () => (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
       stroke="#ff6600" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -54,12 +50,8 @@ export default function TopBar() {
   );
 
   return (
-    <div style={{
-      position: "fixed", top: 16, right: 16,
-      zIndex: 300,
-      display: "flex", alignItems: "center", gap: 8,
-      pointerEvents: "auto",
-    }}>
+    /* Classe CSS .topbar : position responsive via globals.css */
+    <div className="topbar">
 
       {/* ── Theme switch ── */}
       <button
@@ -68,10 +60,9 @@ export default function TopBar() {
         aria-label={isDark ? "Passer en mode clair" : "Passer en mode sombre"}
         onClick={toggleTheme}
         style={{
-          // pill track
           position: "relative",
           width: 54,
-          height: 28,
+          height: 44,          /* touch target 44px */
           borderRadius: 999,
           border: `1.5px solid ${colors.switchBorder}`,
           background: colors.switchTrack,
@@ -82,13 +73,15 @@ export default function TopBar() {
           outline: "none",
           transition: "border-color 0.2s, background 0.2s",
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
         }}
       >
-        {/* thumb */}
         <span style={{
           position: "absolute",
-          top: 3,
-          left: isDark ? 26 : 3,
+          top: "50%",
+          transform: "translateY(-50%)",
+          left: isDark ? 28 : 4,
           width: 20,
           height: 20,
           borderRadius: "50%",
@@ -118,7 +111,8 @@ export default function TopBar() {
             borderRadius: 8,
             color: colors.accent,
             cursor: "pointer",
-            width: 36, height: 36,
+            /* touch target 44px */
+            width: 44, height: 44,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: "monospace", fontSize: 13, fontWeight: "bold",
             letterSpacing: 1,
@@ -128,10 +122,9 @@ export default function TopBar() {
           {initials}
         </button>
 
-        {/* Dropdown */}
         {open && (
           <div style={{
-            position: "absolute", top: 44, right: 0,
+            position: "absolute", top: 52, right: 0,
             background: colors.bg,
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
@@ -143,7 +136,6 @@ export default function TopBar() {
               ? "0 8px 32px rgba(0,0,0,0.6)"
               : "0 8px 32px rgba(0,0,0,0.12)",
           }}>
-            {/* Username */}
             <div style={{
               padding: "12px 16px",
               borderBottom: `1px solid ${colors.divider}`,
@@ -156,7 +148,6 @@ export default function TopBar() {
               </div>
             </div>
 
-            {/* Déconnexion */}
             <button
               onClick={() => { setOpen(false); logout(); }}
               style={{
@@ -166,7 +157,9 @@ export default function TopBar() {
                 color: colors.danger,
                 fontFamily: "monospace",
                 fontSize: 12,
-                padding: "12px 16px",
+                /* touch target */
+                padding: "14px 16px",
+                minHeight: 44,
                 textAlign: "left",
                 cursor: "pointer",
                 display: "flex",
@@ -183,7 +176,6 @@ export default function TopBar() {
         )}
       </div>
 
-      {/* Fermer dropdown au clic extérieur */}
       {open && (
         <div
           onClick={() => setOpen(false)}
