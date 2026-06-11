@@ -7,11 +7,17 @@ import Sidebar from "@/components/Sidebar";
 import ParcelDetailModal from "@/components/ParcelDetailModal";
 import TopBar from "@/components/TopBar";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
 import { useParcels } from "@/hooks/useParcels";
 import { useFlightPositions } from "@/hooks/useFlightPositions";
 import type { Parcel } from "@/hooks/useParcels";
 import type { PositionMode } from "@/hooks/useFlightPositions";
 
+/*
+  Globe chargé dynamiquement (WebGL/Three.js) — pas de SSR.
+  Le composant n'est monté qu'après authentification pour éviter
+  que le canvas capture les touch events pendant l'écran de login.
+*/
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
 
 /** Durée de l'animation POV en ms */
@@ -146,11 +152,28 @@ function GlobeWithData() {
 }
 
 export default function Home() {
+  const { access } = useAuth();
+
   return (
-    <AuthGate>
-      <main style={{ margin: 0, padding: 0 }}>
-        <GlobeWithData />
-      </main>
-    </AuthGate>
+    <>
+      {/* AuthGate : overlay plein écran z-index 9999 tant que !access */}
+      <AuthGate>
+        {null}
+      </AuthGate>
+
+      {/*
+        Globe monté UNIQUEMENT après auth.
+        Raison : le canvas WebGL (globe.gl / Three.js) capture tous les
+        touch events iOS Safari même avec pointer-events:none mal hérité.
+        En ne le montant pas du tout pendant le login, on élimine le problème
+        à la racine. Le CSS pointer-events:none sur .globe-container reste
+        en place pour protéger les overlays (sidebar, modals) une fois connecté.
+      */}
+      {access && (
+        <main style={{ margin: 0, padding: 0 }}>
+          <GlobeWithData />
+        </main>
+      )}
+    </>
   );
 }
