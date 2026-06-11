@@ -35,7 +35,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 1
     if (err.name === "AbortError") {
       throw new Error(
         `Impossible de joindre le serveur (timeout).\n` +
-        `Sur mobile, vérifiez que NEXT_PUBLIC_API_URL pointe sur l'IP LAN/Tailscale et non localhost.\n` +
+        `Sur mobile, NEXT_PUBLIC_API_URL doit pointer sur l'IP LAN/Tailscale et localhost pour desktop UNIQUEMENT.\n` +
         `Valeur actuelle : ${API}`
       );
     }
