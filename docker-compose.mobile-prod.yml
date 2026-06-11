@@ -1,0 +1,27 @@
+# docker-compose.mobile-prod.yml
+# Usage: make up-mobile-prod
+# Build de production Next.js pour test sur iPhone via Tailscale.
+# Pas de HMR, pas de websocket localhost -> React s'hydrate correctement
+# sur Safari iOS.
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    command: sh -c "npm run build && npm start"
+    volumes:
+      - ./frontend:/app
+      - frontend_nm_prod:/app/node_modules
+      - frontend_next_prod:/app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://${TAILSCALE_IP}:8000
+      - NODE_ENV=production
+    depends_on:
+      - backend
+
+volumes:
+  frontend_nm_prod:
+  frontend_next_prod:

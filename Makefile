@@ -1,4 +1,4 @@
-.PHONY: up up-mobile down build migrate makemigrations seed seed-demo test shell logs restart re re-mobile
+.PHONY: up up-mobile up-mobile-prod down build migrate makemigrations seed seed-demo test shell logs restart re re-mobile re-mobile-prod
 
 # ── Docker ────────────────────────────────────────────────
 up:
@@ -6,6 +6,9 @@ up:
 
 up-mobile:
 	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+
+up-mobile-prod:
+	docker compose -f docker-compose.yml -f docker-compose.mobile-prod.yml up -d
 
 down:
 	docker compose down
@@ -17,6 +20,10 @@ re:
 re-mobile:
 	docker compose down
 	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+
+re-mobile-prod:
+	docker compose down
+	docker compose -f docker-compose.yml -f docker-compose.mobile-prod.yml up -d --build
 
 build:
 	docker compose build
@@ -32,6 +39,9 @@ restart:
 
 logs:
 	docker compose logs -f backend
+
+logs-frontend:
+	docker compose logs -f frontend
 
 # ── Django ────────────────────────────────────────────────
 migrate:
