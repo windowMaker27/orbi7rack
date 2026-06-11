@@ -17,6 +17,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   if (access) return <>{children}</>;
 
   const isLight = theme === "light";
+  const assetBase = isLight ? "/assets/light" : "/assets/dark";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,8 +59,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       alignItems: "center", justifyContent: "center",
       background: isLight ? "#fff5f0" : "#0a0000",
       color: isLight ? "#1a0500" : "#fff",
-      padding: "0 16px", gap: 16,
+      padding: "0 16px", gap: 24,
     }}>
+      {/* Theme toggle */}
       <button type="button"
         onClick={toggleTheme}
         aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
@@ -71,6 +73,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         }}
       >{isLight ? "🌙" : "☀️"}</button>
 
+      {/* Logo video */}
+      <video
+        key={assetBase}
+        src={`${assetBase}/orbi7rack-video.webm`}
+        autoPlay
+        loop
+        muted
+        playsInline
+        style={{ width: "min(320px, 80vw)", height: "auto", display: "block" }}
+      />
+
+      {/* Formulaire */}
       <form onSubmit={handleSubmit} action="javascript:void(0)" noValidate
         className="auth-form"
         style={{
@@ -78,10 +92,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           border: "1px solid #ff440033",
         }}
       >
-        <h1 style={{ color: "#ff4800", fontFamily: "monospace", textAlign: "center", fontSize: 20, margin: 0 }}>
-          ORBI7RACK
-        </h1>
-
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
             <button key={m} type="button"

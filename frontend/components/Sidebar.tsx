@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import AddParcelModal from "./AddParcelModal";
 import type { Parcel } from "@/hooks/useParcels";
 import type { Theme } from "@/context/ThemeContext";
@@ -57,6 +58,7 @@ export default function Sidebar({
   const [showAdd, setShowAdd] = useState(false);
   const isDark = theme === "dark";
   const STATUS_COLORS = isDark ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+  const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
   const c = {
     bg:        isDark ? "rgba(10,2,0,0.92)"    : "rgba(240,237,232,0.95)",
@@ -89,20 +91,16 @@ export default function Sidebar({
         {/* Handle drag — visible mobile uniquement (via CSS) */}
         <div className="sidebar-handle" />
 
-        {/* Logo / titre */}
+        {/* Logo image */}
         <div className="sidebar-header">
-          <div style={{
-            width: 28, height: 28,
-            background: c.accent,
-            borderRadius: 6,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14,
-            flexShrink: 0,
-          }}>📦</div>
-          <div>
-            <div style={{ color: c.accent, fontFamily: "monospace", fontSize: 12, fontWeight: "bold", letterSpacing: 2 }}>ORBI7RACK</div>
-            <div style={{ color: c.accentLbl, fontFamily: "monospace", fontSize: 8, letterSpacing: 1 }}>PARCEL TRACKER</div>
-          </div>
+          <Image
+            src={`${assetBase}/orbi7rack.png`}
+            alt="Orbi7rack"
+            width={160}
+            height={48}
+            style={{ objectFit: "contain", maxWidth: "100%", height: "auto" }}
+            priority
+          />
         </div>
 
         {/* Liste */}
@@ -133,7 +131,6 @@ export default function Sidebar({
                     padding: "9px 12px",
                     marginBottom: 6,
                     cursor: "pointer",
-                    /* Touch target min 44px */
                     minHeight: 44,
                     transition: "background 150ms ease, border-color 150ms ease",
                   }}
@@ -199,7 +196,6 @@ export default function Sidebar({
               fontFamily: "monospace",
               fontSize: 11,
               padding: "9px 0",
-              /* Touch target */
               minHeight: 44,
               cursor: "pointer",
               letterSpacing: 1,

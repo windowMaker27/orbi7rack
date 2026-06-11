@@ -165,15 +165,23 @@ function slerpLatLng(lat1:number,lng1:number,lat2:number,lng2:number,t:number):[
   ];
 }
 
-function makeIconTexture(emoji:string):THREE.Texture{
-  const size=128;
-  const canvas=document.createElement("canvas");
-  canvas.width=size;canvas.height=size;
-  const ctx=canvas.getContext("2d")!;
-  ctx.font=`${size*0.7}px serif`;
-  ctx.textAlign="center";ctx.textBaseline="middle";
-  ctx.fillText(emoji,size/2,size/2);
-  return new THREE.CanvasTexture(canvas);
+/** Charge une image depuis /assets et en fait une THREE.Texture */
+function makeImageTexture(src: string): Promise<THREE.Texture> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => resolve(new THREE.Texture(img));
+    img.onerror = () => {
+      // Fallback : carré coloré 64x64
+      const canvas = document.createElement("canvas");
+      canvas.width = 64; canvas.height = 64;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ff6600";
+      ctx.fillRect(8, 8, 48, 48);
+      resolve(new THREE.CanvasTexture(canvas));
+    };
+    img.crossOrigin = "anonymous";
+    img.src = src;
+  });
 }
 
 function lerpAngle(current:number,target:number,t:number):number{
@@ -181,19 +189,10 @@ function lerpAngle(current:number,target:number,t:number):number{
   return current+diff*t;
 }
 
-/**
- * icone de transport selon le mode dominant du colis.
- * - air  → ✈️  (seulement si confirmé explicitement)
- * - sea  → 🚢
- * - road / unknown / out_for_delivery → 🚚
- */
-function resolveTransportEmoji(p: Parcel): string {
-  if (p.status === "out_for_delivery") return "\uD83D\uDE9A"; // 🚚
-  switch (p.transport_mode) {
-    case "air":  return "\u2708\uFE0F"; // ✈️
-    case "sea":  return "\uD83D\uDEA2"; // 🚢
-    default:     return "\uD83D\uDE9A"; // 🚚 (road, unknown, undefined)
-  }
+function resolveTransportType(p: Parcel): "plane" | "parcel" {
+  if (p.status === "out_for_delivery") return "parcel";
+  if (p.transport_mode === "air") return "plane";
+  return "parcel";
 }
 
 function resolveCurrentPosition(p: Parcel, flightPos: FlightPositionMap): { lat: number; lng: number } | null {
@@ -264,7 +263,7 @@ function buildData(parcels: Parcel[], isDark: boolean, flightPositions: FlightPo
         startLat: origin[0], startLng: origin[1],
         endLat: dest.lat, endLng: dest.lng,
         color: SC[p.status] ?? "#fff",
-        emoji: resolveTransportEmoji(p),
+        iconType: resolveTransportType(p),
         _curLat: null as number | null, _curLng: null as number | null,
         _curAlt: null as number | null, _curHdg: null as number | null,
       };
@@ -350,9 +349,21 @@ function applyBloom(composer: EffectComposer, isDark: boolean) {
   bloom.luminancePass.fullscreenMaterial.uniforms.threshold.value = b.threshold;
 }
 
-function setupSprites(scene: THREE.Scene, transport: any[]): { sprite: THREE.Sprite; arc: any }[] {
+async function setupSprites(
+  scene: THREE.Scene,
+  transport: any[],
+  isDark: boolean,
+): Promise<{ sprite: THREE.Sprite; arc: any }[]> {
+  const assetBase = isDark ? "/assets/dark" : "/assets/light";
+  const [planeTex, parcelTex] = await Promise.all([
+    makeImageTexture(`${assetBase}/plane.png`),
+    makeImageTexture(`${assetBase}/parcel.png`),
+  ]);
+  planeTex.needsUpdate = true;
+  parcelTex.needsUpdate = true;
+
   return transport.map(arc => {
-    const tex = makeIconTexture(arc.emoji);
+    const tex = arc.iconType === "plane" ? planeTex : parcelTex;
     const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, rotation: 0 });
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(8, 8, 1);
@@ -390,7 +401,9 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         const saved = prevState.get(arc.id);
         if (saved) { arc._curLat = saved.lat; arc._curLng = saved.lng; arc._curAlt = saved.alt; arc._curHdg = saved.hdg; }
       });
-      spritesRef.current = setupSprites(sceneRef.current, newTransport);
+      setupSprites(sceneRef.current, newTransport, isDark).then(sprites => {
+        spritesRef.current = sprites;
+      });
     }
     if (composerRef.current) applyBloom(composerRef.current, isDark);
   }, [parcels, theme, globeRef, flightPositions]);
@@ -463,7 +476,7 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
         arc._curAlt = Math.sin(0.5 * Math.PI) * ARC_ALTITUDE;
         arc._curHdg = 0;
       });
-      spritesRef.current = setupSprites(scene, transport);
+      spritesRef.current = await setupSprites(scene, transport, isDark);
 
       const renderer = globe.renderer() as THREE.WebGLRenderer;
       const camera = globe.camera() as THREE.Camera;
