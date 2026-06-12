@@ -93,10 +93,10 @@ export default function TopBar() {
               borderBottom: `1px solid ${colors.divider}`,
             }}>
               <div style={{ color: colors.muted, fontFamily: "monospace", fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>
-                CONNECT\u00c9 EN TANT QUE
+                CONNECTÉ EN TANT QUE
               </div>
               <div style={{ color: colors.accent, fontFamily: "monospace", fontSize: 13, fontWeight: "bold" }}>
-                {username ?? "\u2014"}
+                {username ?? "non connecté"}
               </div>
             </div>
 
@@ -121,7 +121,7 @@ export default function TopBar() {
               onMouseEnter={e => (e.currentTarget.style.background = colors.dangerBg)}
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             >
-              <span>\u23FB</span> D\u00e9connexion
+              <span>⏻</span> Déconnexion
             </button>
           </div>
         )}
