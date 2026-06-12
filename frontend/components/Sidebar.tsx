@@ -66,11 +66,10 @@ export default function Sidebar({
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
   const handleRef = useRef<HTMLDivElement>(null);
-  // Refs pour le drag — pas de state pour éviter les re-renders pendant le glissement
   const isDragging = useRef(false);
   const dragStartY = useRef(0);
   const dragStartH = useRef(0);
-  // Ref miroir de heightVh accessible dans les listeners sans stale closure
+  // Ref miroir pour accéder à heightVh dans les listeners sans stale closure
   const heightVhRef = useRef(DEFAULT_HEIGHT_VH);
   heightVhRef.current = heightVh;
 
@@ -79,7 +78,6 @@ export default function Sidebar({
     if (!handle) return;
 
     const onPointerDown = (e: PointerEvent) => {
-      // Capturer le pointer pour recevoir les événements même hors du handle
       handle.setPointerCapture(e.pointerId);
       isDragging.current = true;
       dragStartY.current = e.clientY;
@@ -87,7 +85,6 @@ export default function Sidebar({
       e.preventDefault();
     };
 
-    // Move et Up sur window pour attraper les événements hors du handle
     const onPointerMove = (e: PointerEvent) => {
       if (!isDragging.current) return;
       const deltaY = dragStartY.current - e.clientY;
@@ -108,7 +105,6 @@ export default function Sidebar({
     };
 
     handle.addEventListener("pointerdown", onPointerDown, { passive: false });
-    // Move/Up sur window pour ne pas rater les events quand le doigt sort du handle
     window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
@@ -120,29 +116,29 @@ export default function Sidebar({
       window.removeEventListener("pointercancel", onPointerUp);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // [] — les listeners sont stables grâce aux refs
+  }, []);
 
   const c = {
-    bg:        isDark ? "rgba(10,2,0,0.92)"    : "rgba(240,237,232,0.95)",
-    border:    isDark ? "rgba(255,68,0,0.2)"   : "rgba(0,80,160,0.18)",
-    accent:    isDark ? "#ff6600"              : "#0066cc",
-    accentDim: isDark ? "rgba(255,68,0,0.06)" : "rgba(0,102,204,0.05)",
-    accentBdr: isDark ? "rgba(255,68,0,0.12)" : "rgba(0,80,160,0.15)",
-    accentLbl: isDark ? "rgba(255,68,0,0.5)"  : "rgba(0,80,180,0.65)",
-    text:      isDark ? "#ffffff"              : "#0f0f1a",
-    muted:     isDark ? "#ffffff88"            : "rgba(15,15,26,0.7)",
-    faint:     isDark ? "#ffffff33"            : "rgba(15,15,26,0.4)",
+    bg:        isDark ? "rgba(10,2,0,0.92)"      : "rgba(240,237,232,0.95)",
+    border:    isDark ? "rgba(255,68,0,0.2)"     : "rgba(0,80,160,0.18)",
+    accent:    isDark ? "#ff6600"                : "#0066cc",
+    accentDim: isDark ? "rgba(255,68,0,0.06)"   : "rgba(0,102,204,0.05)",
+    accentBdr: isDark ? "rgba(255,68,0,0.12)"   : "rgba(0,80,160,0.15)",
+    accentLbl: isDark ? "rgba(255,68,0,0.5)"    : "rgba(0,80,180,0.65)",
+    text:      isDark ? "#ffffff"                : "#0f0f1a",
+    muted:     isDark ? "#ffffff88"              : "rgba(15,15,26,0.7)",
+    faint:     isDark ? "#ffffff33"              : "rgba(15,15,26,0.4)",
     card:      isDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.65)",
-    cardBdr:   isDark ? "rgba(255,68,0,0.08)" : "rgba(0,80,160,0.15)",
-    cardHov:   isDark ? "rgba(255,68,0,0.05)" : "rgba(0,80,160,0.04)",
-    warning:   isDark ? "#ffaa00"              : "#b86e00",
-    warnBg:    isDark ? "rgba(255,170,0,0.08)" : "rgba(184,110,0,0.06)",
-    warnBdr:   isDark ? "rgba(255,170,0,0.22)" : "rgba(184,110,0,0.18)",
+    cardBdr:   isDark ? "rgba(255,68,0,0.08)"   : "rgba(0,80,160,0.15)",
+    cardHov:   isDark ? "rgba(255,68,0,0.05)"   : "rgba(0,80,160,0.04)",
+    warning:   isDark ? "#ffaa00"                : "#b86e00",
+    warnBg:    isDark ? "rgba(255,170,0,0.08)"  : "rgba(184,110,0,0.06)",
+    warnBdr:   isDark ? "rgba(255,170,0,0.22)"  : "rgba(184,110,0,0.18)",
   };
 
   return (
     <>
-      {/* Logo flottant — mobile uniquement (CSS masque sur desktop) */}
+      {/* Logo flottant — mobile uniquement */}
       <div className="logo-float">
         <Image
           src={`${assetBase}/logo.png`}
@@ -157,19 +153,22 @@ export default function Sidebar({
       <div
         className="sidebar"
         style={{
+          // --sidebar-h est lu par le CSS .sidebar pour la hauteur mobile
+          // Sur desktop le CSS ignore cette var et force height:100%
+          "--sidebar-h": `${heightVh}vh`,
           background: c.bg,
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
         } as React.CSSProperties}
       >
-        {/* Handle drag — touch-action:none bloque le scroll natif pendant le glissement */}
+        {/* Handle drag */}
         <div
           className="sidebar-handle"
           ref={handleRef}
           style={{ touchAction: "none" }}
         />
 
-        {/* Logo dans la sidebar — desktop uniquement (CSS display:none mobile) */}
+        {/* Logo desktop */}
         <div className="sidebar-header">
           <Image
             src={`${assetBase}/logo.png`}
