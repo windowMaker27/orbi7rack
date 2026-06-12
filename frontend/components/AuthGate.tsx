@@ -21,7 +21,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
   // Accents identiques à globals.css
-  const accent      = isDark ? "#ff6600"              : "#0066cc";
+  const accent      = isDark ? "#d14d00"              : "#0066cc";
   const accentBg    = isDark ? "rgba(255,68,0,0.12)"  : "rgba(0,102,204,0.1)";
   const accentBorder= isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
   const bg          = isDark ? "#000000"              : "#ffffff";
