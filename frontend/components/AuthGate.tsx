@@ -87,10 +87,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         loop
         muted
         playsInline
+        preload="metadata"
+        poster={`${assetBase}/login-poster.jpg`}
         style={{ width: "min(640px, 160vw)", height: "auto", display: "block" }}
       >
-        <source src={`${assetBase}/orbi7rack-video.webm`} type="video/webm" />
         <source src={`${assetBase}/orbi7rack-video.mp4`} type="video/mp4" />
+        <source src={`${assetBase}/orbi7rack-video.webm`} type="video/webm" />
       </video>
 
       {/* Formulaire */}
