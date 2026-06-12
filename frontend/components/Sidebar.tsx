@@ -10,9 +10,9 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "En attente",
   in_transit: "En transit",
   out_for_delivery: "En livraison",
-  delivered: "Livr\u00e9",
+  delivered: "Livré",
   exception: "Incident",
-  expired: "Expir\u00e9",
+  expired: "Expiré",
 };
 
 const STATUS_COLORS_DARK: Record<string, string> = {
@@ -66,28 +66,35 @@ export default function Sidebar({
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
   const handleRef = useRef<HTMLDivElement>(null);
-  const dragStartY = useRef<number>(0);
-  const dragStartH = useRef<number>(0);
+  // Refs pour le drag — pas de state pour éviter les re-renders pendant le glissement
   const isDragging = useRef(false);
+  const dragStartY = useRef(0);
+  const dragStartH = useRef(0);
+  // Ref miroir de heightVh accessible dans les listeners sans stale closure
+  const heightVhRef = useRef(DEFAULT_HEIGHT_VH);
+  heightVhRef.current = heightVh;
 
   useEffect(() => {
     const handle = handleRef.current;
     if (!handle) return;
 
     const onPointerDown = (e: PointerEvent) => {
-      e.preventDefault();
+      // Capturer le pointer pour recevoir les événements même hors du handle
       handle.setPointerCapture(e.pointerId);
       isDragging.current = true;
       dragStartY.current = e.clientY;
-      dragStartH.current = heightVh;
+      dragStartH.current = heightVhRef.current;
+      e.preventDefault();
     };
 
+    // Move et Up sur window pour attraper les événements hors du handle
     const onPointerMove = (e: PointerEvent) => {
       if (!isDragging.current) return;
       const deltaY = dragStartY.current - e.clientY;
       const deltaVh = (deltaY / window.innerHeight) * 100;
       const next = Math.min(MAX_HEIGHT_VH, Math.max(MIN_HEIGHT_VH, dragStartH.current + deltaVh));
       setHeightVh(next);
+      e.preventDefault();
     };
 
     const onPointerUp = () => {
@@ -100,18 +107,20 @@ export default function Sidebar({
       });
     };
 
-    handle.addEventListener("pointerdown", onPointerDown);
-    handle.addEventListener("pointermove", onPointerMove);
-    handle.addEventListener("pointerup", onPointerUp);
-    handle.addEventListener("pointercancel", onPointerUp);
+    handle.addEventListener("pointerdown", onPointerDown, { passive: false });
+    // Move/Up sur window pour ne pas rater les events quand le doigt sort du handle
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
 
     return () => {
       handle.removeEventListener("pointerdown", onPointerDown);
-      handle.removeEventListener("pointermove", onPointerMove);
-      handle.removeEventListener("pointerup", onPointerUp);
-      handle.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [heightVh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // [] — les listeners sont stables grâce aux refs
 
   const c = {
     bg:        isDark ? "rgba(10,2,0,0.92)"    : "rgba(240,237,232,0.95)",
@@ -153,8 +162,12 @@ export default function Sidebar({
           WebkitBackdropFilter: "blur(16px)",
         } as React.CSSProperties}
       >
-        {/* Handle drag */}
-        <div className="sidebar-handle" ref={handleRef} />
+        {/* Handle drag — touch-action:none bloque le scroll natif pendant le glissement */}
+        <div
+          className="sidebar-handle"
+          ref={handleRef}
+          style={{ touchAction: "none" }}
+        />
 
         {/* Logo dans la sidebar — desktop uniquement (CSS display:none mobile) */}
         <div className="sidebar-header">
@@ -219,7 +232,7 @@ export default function Sidebar({
                         letterSpacing: 0.3,
                         flexShrink: 0,
                       }}>
-                        \uD83D\uDD50 {staleAge}
+                        🕐 {staleAge}
                       </span>
                     )}
                   </div>
@@ -238,7 +251,7 @@ export default function Sidebar({
                     </div>
                     {(parcel.origin_country || parcel.dest_country) && (
                       <span style={{ color: c.faint, fontFamily: "monospace", fontSize: 8 }}>
-                        {parcel.origin_country || "?"} \u2192 {parcel.dest_country || "?"}
+                        {parcel.origin_country || "?"} → {parcel.dest_country || "?"}
                       </span>
                     )}
                   </div>
