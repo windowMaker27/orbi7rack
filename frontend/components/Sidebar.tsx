@@ -151,7 +151,6 @@ export default function Sidebar({
           background: c.bg,
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          height: `${heightVh}vh`,
         } as React.CSSProperties}
       >
         {/* Handle drag */}

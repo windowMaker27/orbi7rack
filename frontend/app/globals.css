@@ -103,7 +103,7 @@ body {
     right: auto;
     bottom: 0;
     width: 260px;
-    height: auto;
+    height: 100%;
     border-top: none;
     border-right: 1px solid var(--border);
     border-radius: 0;

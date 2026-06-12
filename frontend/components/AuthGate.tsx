@@ -172,6 +172,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           border: `1px solid ${accentBorder}`,
         }}
       >
+        <img
+          src={`${assetBase}/logo.png`}
+          alt="Orbi7rack"
+          style={{ width: 425, height: 64, marginBottom: 10 }}
+        />
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
             <button
