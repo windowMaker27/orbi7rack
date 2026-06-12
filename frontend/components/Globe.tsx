@@ -99,23 +99,23 @@ async function fetchCountries(): Promise<any> {
 function latitudeBiomeColor(lat: number): string {
   const a = Math.abs(lat);
   if (a <  8)  return "#2d8a1f";
-  if (a < 12)  return "#3da628";  
-  if (a < 17)  return "#5abb30"; 
-  if (a < 22)  return "#8cc43a"; 
-  if (a < 26)  return "#c4a020"; 
-  if (a < 30)  return "#e29e45"; 
+  if (a < 12)  return "#3da628";
+  if (a < 17)  return "#5abb30";
+  if (a < 22)  return "#8cc43a";
+  if (a < 26)  return "#c4a020";
+  if (a < 30)  return "#e29e45";
   if (a < 34)  return "#ad7042";
-  if (a < 38)  return "#b87820"; 
+  if (a < 38)  return "#b87820";
   if (a < 42)  return "#9ab040";
-  if (a < 46)  return "#72a838"; 
-  if (a < 50)  return "#5a9430"; 
+  if (a < 46)  return "#72a838";
+  if (a < 50)  return "#5a9430";
   if (a < 55)  return "#4a8028";
-  if (a < 60)  return "#3d6e22"; 
-  if (a < 65)  return "#4e7a3a"; 
-  if (a < 70)  return "#7a9858"; 
-  if (a < 75)  return "#9ab878"; 
-  if (a < 80)  return "#b8c890"; 
-  return "#d0ddb0";              
+  if (a < 60)  return "#3d6e22";
+  if (a < 65)  return "#4e7a3a";
+  if (a < 70)  return "#7a9858";
+  if (a < 75)  return "#9ab878";
+  if (a < 80)  return "#b8c890";
+  return "#d0ddb0";
 }
 
 function featureCentroidLat(feature: any): number {
@@ -165,13 +165,11 @@ function slerpLatLng(lat1:number,lng1:number,lat2:number,lng2:number,t:number):[
   ];
 }
 
-/** Charge une image depuis /assets et en fait une THREE.Texture */
 function makeImageTexture(src: string): Promise<THREE.Texture> {
   return new Promise((resolve) => {
     const img = new window.Image();
     img.onload = () => resolve(new THREE.Texture(img));
     img.onerror = () => {
-      // Fallback : carré coloré 64x64
       const canvas = document.createElement("canvas");
       canvas.width = 64; canvas.height = 64;
       const ctx = canvas.getContext("2d")!;
@@ -282,7 +280,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
     .pointLabel((d: any) => `
       <div style="background:rgba(10,0,0,0.85);border:1px solid rgba(255,68,0,0.4);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:#fff;min-width:180px;">
         <div style="color:#ff6600;letter-spacing:2px;font-size:11px;margin-bottom:6px">${d.label}</div>
-        <div style="color:${d.color};margin-bottom:4px">\u25CF ${d.status}</div>
+        <div style="color:${d.color};margin-bottom:4px">&#9679; ${d.status}</div>
         ${d.description ? `<div style="color:#ffffff88;font-size:10px">${d.description}</div>` : ""}
       </div>
     `);
@@ -297,7 +295,7 @@ function applyData(globe: any, parcels: Parcel[], isDark: boolean, flightPositio
   globe
     .ringsData(rings)
     .ringLat((d: any) => d.lat).ringLng((d: any) => d.lng)
-    .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "00")}`)
+    .ringColor((d: any) => (t: number) => `${d.color}${Math.round((1 - t) * 255).toString(16).padStart(2, "0")}`)
     .ringMaxRadius(3).ringPropagationSpeed(2).ringRepeatPeriod(800);
   void SC;
 }
@@ -552,6 +550,6 @@ export default function Globe({ parcels, globeRef, flightPositions = {}, positio
 
   const bgColor = theme === "dark" ? "#0a0000" : "#ffffffbc";
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100vh", background: bgColor }} />
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
   );
 }
