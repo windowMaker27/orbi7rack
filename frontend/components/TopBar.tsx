@@ -77,6 +77,7 @@ export default function TopBar() {
         {open && (
           <div style={{
             position: "absolute", top: 44, right: 0,
+            zIndex: 310,
             background: colors.bg,
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
@@ -137,7 +138,6 @@ export default function TopBar() {
         style={{
           position: "relative",
           width: 44,
-          /* height géré par .topbar-theme-switch en CSS */
           borderRadius: 999,
           border: `1.5px solid ${colors.switchBorder}`,
           background: colors.switchTrack,
