@@ -189,6 +189,7 @@ body {
   align-items: flex-end;
   gap: 6px;
   pointer-events: auto;
+  align-items: center;
 }
 @media (min-width: 768px) {
   .topbar {
