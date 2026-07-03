@@ -1,13 +1,20 @@
 """
-seed_demo.py — Crée des colis de démo avec events géocodés et SimulationEngine.
+seed_demo.py — Crée des colis de démo liés à des vols live (FlightRadar).
 
 Usage (depuis /backend) :
-  docker compose exec backend python scripts/seed_demo.py
-  docker compose exec backend python scripts/seed_demo.py --username monuser
-  python scripts/seed_demo.py --username monuser
+  docker compose exec backend python scripts/seed_demo.py --flight AF011
+  docker compose exec backend python scripts/seed_demo.py --flight AF011 --username monuser
+  docker compose exec backend python scripts/seed_demo.py --flight AF011 --tracking DEMO-AF011-001 --description "Mon colis Air France"
 
-Sans --username : crée/utilise le user 'demo' (password: demo1234).
-Avec --username  : attache les colis au user existant spécifié.
+Arguments :
+  --flight      OBLIGATOIRE. Numéro de vol IATA (ex: AF011, UA123).
+  --username    Attache le colis à un user existant (défaut: user 'demo').
+  --tracking    Numéro de tracking custom (défaut: généré depuis le vol).
+  --description Description du colis (défaut: "Colis démo <flight>").
+  --carrier     Transporteur (défaut: extrait du préfixe IATA du vol).
+  --origin      Pays d'origine ISO (ex: US). Optionnel.
+  --dest        Pays de destination ISO (ex: FR). Optionnel.
+  --force       Supprime le colis existant avec ce tracking_number et le recrée.
 """
 import os
 import sys
@@ -21,104 +28,69 @@ sys.path.insert(0, str(BASE))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from django.utils import timezone
-from datetime import timedelta
 from django.contrib.auth import get_user_model
-from apps.tracking.models import Parcel, TrackingEvent
-from apps.tracking.services.simulation_engine import compute_parcel_simulation
+from apps.tracking.models import Parcel
 
 User = get_user_model()
 
+# Mapping préfixe IATA → nom de compagnie (quick lookup)
+IATA_CARRIERS = {
+    "AF": "Air France",
+    "UA": "United Airlines",
+    "AA": "American Airlines",
+    "BA": "British Airways",
+    "LH": "Lufthansa",
+    "EK": "Emirates",
+    "QR": "Qatar Airways",
+    "DL": "Delta Air Lines",
+    "KL": "KLM",
+    "IB": "Iberia",
+    "TK": "Turkish Airlines",
+    "SQ": "Singapore Airlines",
+    "CX": "Cathay Pacific",
+    "NH": "ANA",
+    "JL": "Japan Airlines",
+    "CA": "Air China",
+    "MU": "China Eastern",
+    "CZ": "China Southern",
+    "KE": "Korean Air",
+    "OZ": "Asiana Airlines",
+}
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
-def make_event(parcel, days_ago, location, lat, lng, status, transport_mode="unknown"):
-    timestamp = timezone.now() - timedelta(days=days_ago)
-    ev, _ = TrackingEvent.objects.get_or_create(
-        parcel=parcel,
-        timestamp=timestamp,
-        description=status,
-        defaults={
-            "location": location,
-            "latitude": lat,
-            "longitude": lng,
-            "status": status[:100],
-            "transport_mode": transport_mode,
-        },
+def guess_carrier(flight_number: str) -> str:
+    prefix = "".join(c for c in flight_number if c.isalpha()).upper()
+    return IATA_CARRIERS.get(prefix, prefix or "Unknown")
+
+
+def get_or_create_demo_user() -> object:
+    user, created = User.objects.get_or_create(
+        username="demo",
+        defaults={"email": "demo@orbi7rack.local"},
     )
-    return ev
+    if created:
+        user.set_password("demo1234")
+        user.save()
+        print("[seed] User 'demo' créé (password: demo1234)")
+    else:
+        print("[seed] User 'demo' existant")
+    return user
 
 
-# ---------------------------------------------------------------------------
-# Données de démo
-# ---------------------------------------------------------------------------
+def run(
+    flight_number: str,
+    target_username: str | None = None,
+    tracking_number: str | None = None,
+    description: str | None = None,
+    carrier: str | None = None,
+    origin_country: str | None = None,
+    dest_country: str | None = None,
+    force: bool = False,
+):
+    flight_number = flight_number.strip().upper()
 
-DEMO_PARCELS = [
-    {
-        "tracking_number": "DEMO-CN-FR-001",
-        "carrier": "Cainiao",
-        "description": "Commande AliExpress (en transit)",
-        "origin_country": "CN",
-        "dest_country": "FR",
-        "status": Parcel.Status.IN_TRANSIT,
-        "events": [
-            dict(days_ago=6.5,  location="Shenzhen",  lat=22.5431,  lng=114.0579, status="Parcel accepted at origin facility",          transport_mode="road"),
-            dict(days_ago=5.8,  location="Shenzhen",  lat=22.5431,  lng=114.0579, status="Departed from origin sorting center",          transport_mode="air"),
-            dict(days_ago=5.2,  location="Shanghai",  lat=31.2304,  lng=121.4737, status="Arrived at Shanghai Pudong hub",               transport_mode="air"),
-            dict(days_ago=4.5,  location="Shanghai",  lat=31.2304,  lng=121.4737, status="Departed on international flight",             transport_mode="air"),
-            dict(days_ago=2.8,  location="Paris CDG", lat=49.0097,  lng=2.5479,   status="Arrived at Paris Charles de Gaulle",           transport_mode="air"),
-            dict(days_ago=2.2,  location="Paris CDG", lat=49.0097,  lng=2.5479,   status="Customs clearance in progress",                transport_mode="road"),
-            dict(days_ago=1.5,  location="Roissy",    lat=49.0014,  lng=2.5491,   status="Released by customs, handed to La Poste",      transport_mode="road"),
-            dict(days_ago=0.8,  location="Paris",     lat=48.8566,  lng=2.3522,   status="In transit to delivery depot",                 transport_mode="road"),
-        ],
-    },
-    {
-        "tracking_number": "DEMO-DE-FR-002",
-        "carrier": "DHL",
-        "description": "Moniteur 27\" (livré)",
-        "origin_country": "DE",
-        "dest_country": "FR",
-        "status": Parcel.Status.DELIVERED,
-        "events": [
-            dict(days_ago=7.0,  location="Berlin",     lat=52.5200,  lng=13.4050,  status="Shipment picked up",                          transport_mode="road"),
-            dict(days_ago=6.3,  location="Leipzig",    lat=51.3397,  lng=12.3731,  status="Processed at Leipzig DHL hub",                 transport_mode="road"),
-            dict(days_ago=5.5,  location="Strasbourg", lat=48.5734,  lng=7.7521,   status="Arrived at border facility Strasbourg",        transport_mode="road"),
-            dict(days_ago=4.8,  location="Strasbourg", lat=48.5734,  lng=7.7521,   status="Customs cleared, entered France",              transport_mode="road"),
-            dict(days_ago=3.5,  location="Paris",      lat=48.8566,  lng=2.3522,   status="Arrived at Paris distribution center",         transport_mode="road"),
-            dict(days_ago=2.0,  location="Paris",      lat=48.8566,  lng=2.3522,   status="Out for delivery",                            transport_mode="road"),
-            dict(days_ago=1.8,  location="Paris",      lat=48.8566,  lng=2.3522,   status="Successfully delivered",                      transport_mode="road"),
-        ],
-    },
-    {
-        "tracking_number": "DEMO-KR-FR-003",
-        "carrier": "Korea Post",
-        "description": "Figurine collector (livrée)",
-        "origin_country": "KR",
-        "dest_country": "FR",
-        "status": Parcel.Status.DELIVERED,
-        "events": [
-            dict(days_ago=12.0, location="Seoul",     lat=37.5665,  lng=126.9780, status="Accepted at Seoul post office",               transport_mode="road"),
-            dict(days_ago=11.2, location="Incheon",   lat=37.4602,  lng=126.4407, status="Departed from Incheon International Airport", transport_mode="air"),
-            dict(days_ago=9.5,  location="Paris CDG", lat=49.0097,  lng=2.5479,   status="Arrived at CDG, customs processing",          transport_mode="air"),
-            dict(days_ago=8.8,  location="Paris CDG", lat=49.0097,  lng=2.5479,   status="Customs cleared",                             transport_mode="road"),
-            dict(days_ago=7.5,  location="Lyon",      lat=45.7640,  lng=4.8357,   status="In transit to Lyon sorting center",           transport_mode="road"),
-            dict(days_ago=6.0,  location="Lyon",      lat=45.7640,  lng=4.8357,   status="Processed at Lyon hub",                      transport_mode="road"),
-            dict(days_ago=5.0,  location="Lyon",      lat=45.7640,  lng=4.8357,   status="Out for delivery",                            transport_mode="road"),
-            dict(days_ago=4.8,  location="Lyon",      lat=45.7640,  lng=4.8357,   status="Successfully delivered",                      transport_mode="road"),
-        ],
-    },
-]
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def run(target_username: str | None = None):
+    # --- Résolution du user ---
     if target_username:
-        # Attache les colis au user existant
         try:
             user = User.objects.get(username=target_username)
             print(f"[seed] User '{target_username}' trouvé (id={user.pk})")
@@ -126,54 +98,66 @@ def run(target_username: str | None = None):
             print(f"[seed] ERREUR : user '{target_username}' introuvable. Annulation.")
             sys.exit(1)
     else:
-        # Crée/récupère le user demo par défaut
-        user, created = User.objects.get_or_create(
-            username="demo",
-            defaults={"email": "demo@orbi7rack.local"},
-        )
-        if created:
-            user.set_password("demo1234")
-            user.save()
-            print("[seed] User 'demo' créé (password: demo1234)")
-        else:
-            print("[seed] User 'demo' existant")
+        user = get_or_create_demo_user()
 
-    for data in DEMO_PARCELS:
-        events_data = data.pop("events")
+    # --- Valeurs par défaut ---
+    tracking = tracking_number or f"DEMO-{flight_number}-001"
+    desc = description or f"Colis démo {flight_number}"
+    car = carrier or guess_carrier(flight_number)
 
-        # Si le colis existe déjà pour un autre owner, on le re-seed pour cet owner
-        existing = Parcel.objects.filter(tracking_number=data["tracking_number"]).first()
-        if existing and existing.owner == user:
-            print(f"[seed] {data['tracking_number']} déjà existant pour '{user.username}', skip")
-            data["events"] = events_data
-            continue
-
-        # Supprime l'ancien si owner différent (re-seed propre)
-        if existing:
-            print(f"[seed] {data['tracking_number']} existe pour un autre owner, suppression...")
+    # --- Gestion de l'existant ---
+    existing = Parcel.objects.filter(tracking_number=tracking).first()
+    if existing:
+        if force:
+            print(f"[seed] --force : suppression de '{tracking}'...")
             existing.delete()
+        else:
+            print(
+                f"[seed] Le colis '{tracking}' existe déjà (owner={existing.owner.username}). "
+                f"Utilisez --force pour le recréer."
+            )
+            sys.exit(0)
 
-        parcel = Parcel.objects.create(**data, owner=user)
-        print(f"[seed] Création {parcel.tracking_number} pour '{user.username}'...")
+    # --- Création du colis ---
+    parcel = Parcel.objects.create(
+        tracking_number=tracking,
+        carrier=car,
+        description=desc,
+        origin_country=origin_country or "",
+        dest_country=dest_country or "",
+        status=Parcel.Status.IN_TRANSIT,
+        owner=user,
+        flight_number=flight_number,
+    )
 
-        for ev_data in events_data:
-            make_event(parcel=parcel, **ev_data)
-
-        compute_parcel_simulation(parcel)
-        print(f"[seed]   → SimEngine OK ({parcel.events.filter(simulated=True).count()} segments simulés)")
-
-        data["events"] = events_data
-
+    print(
+        f"[seed] ✓ Colis '{parcel.tracking_number}' créé pour '{user.username}'\n"
+        f"         → vol live : {flight_number}\n"
+        f"         → carrier  : {car}\n"
+        f"         → status   : {parcel.get_status_display()}"
+    )
     print("[seed] Done.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Seed colis de démo Orbi7rack")
-    parser.add_argument(
-        "--username",
-        type=str,
-        default=None,
-        help="Username du compte auquel attacher les colis (défaut: user 'demo')",
-    )
+    parser = argparse.ArgumentParser(description="Seed colis démo avec vol live — Orbi7rack")
+    parser.add_argument("--flight",      required=True,  help="Numéro de vol IATA (ex: AF011)")
+    parser.add_argument("--username",    default=None,   help="Username du compte cible (défaut: 'demo')")
+    parser.add_argument("--tracking",    default=None,   help="Numéro de tracking custom")
+    parser.add_argument("--description", default=None,   help="Description du colis")
+    parser.add_argument("--carrier",     default=None,   help="Nom du transporteur")
+    parser.add_argument("--origin",      default=None,   help="Pays d'origine ISO (ex: US)")
+    parser.add_argument("--dest",        default=None,   help="Pays de destination ISO (ex: FR)")
+    parser.add_argument("--force",       action="store_true", help="Supprime et recrée si le tracking existe déjà")
     args = parser.parse_args()
-    run(target_username=args.username)
+
+    run(
+        flight_number=args.flight,
+        target_username=args.username,
+        tracking_number=args.tracking,
+        description=args.description,
+        carrier=args.carrier,
+        origin_country=args.origin,
+        dest_country=args.dest,
+        force=args.force,
+    )
