@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useTheme } from "@/context/ThemeContext";
 import type { Parcel } from "@/hooks/useParcels";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -14,8 +13,6 @@ interface AddParcelModalProps {
 
 export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModalProps) {
   const { access } = useAuth();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
 
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrier, setCarrier] = useState("");
@@ -27,10 +24,10 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
   const inputStyle: React.CSSProperties = {
     padding: 12,
     borderRadius: 6,
-    border: isDark ? "1px solid rgba(255,68,0,0.3)" : "1px solid rgba(255,68,0,0.4)",
-    background: isDark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.9)",
-    color: isDark ? "#fff" : "#1a1a1a",
-    fontFamily: "monospace",
+    border: "1px solid var(--border)",
+    background: "var(--accent-dim)",
+    color: "var(--text)",
+    fontFamily: "inherit",
     fontSize: 16,
     outline: "none",
     width: "100%",
@@ -71,24 +68,21 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
   };
 
   return (
-    /* .add-modal-overlay : alignItems flex-end mobile, center desktop */
     <div className="add-modal-overlay" onClick={onClose}>
       <div
         className="add-modal-panel"
         onClick={e => e.stopPropagation()}
         style={{
-          background: isDark ? "rgba(15,3,0,0.92)" : "rgba(255,252,250,0.97)",
+          background: "var(--surface)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          border: isDark
-            ? "1px solid rgba(255,68,0,0.25)"
-            : "1px solid rgba(255,68,0,0.35)",
+          border: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{
-            color: "#ff6600",
-            fontFamily: "monospace",
+            color: "var(--accent)",
+            fontFamily: "inherit",
             fontSize: 13,
             letterSpacing: 3,
             textTransform: "uppercase",
@@ -99,7 +93,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
           <button onClick={onClose} style={{
             background: "none",
             border: "none",
-            color: "#ff440088",
+            color: "var(--text-muted)",
             cursor: "pointer",
             fontSize: 18,
             lineHeight: 1,
@@ -114,8 +108,8 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{
-              color: isDark ? "#ff440099" : "#cc3300cc",
-              fontFamily: "monospace",
+              color: "var(--text-muted)",
+              fontFamily: "inherit",
               fontSize: 11,
               letterSpacing: 1,
             }}>
@@ -134,8 +128,8 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{
-              color: isDark ? "#ff440099" : "#cc3300cc",
-              fontFamily: "monospace",
+              color: "var(--text-muted)",
+              fontFamily: "inherit",
               fontSize: 11,
               letterSpacing: 1,
             }}>
@@ -152,8 +146,8 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{
-              color: isDark ? "#ff440099" : "#cc3300cc",
-              fontFamily: "monospace",
+              color: "var(--text-muted)",
+              fontFamily: "inherit",
               fontSize: 11,
               letterSpacing: 1,
             }}>
@@ -169,7 +163,7 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
           </div>
 
           {error && (
-            <p style={{ color: "#ff4444", fontFamily: "monospace", fontSize: 12, margin: 0 }}>
+            <p style={{ color: "var(--danger)", fontFamily: "inherit", fontSize: 12, margin: 0 }}>
               {error}
             </p>
           )}
@@ -182,15 +176,16 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
               padding: "12px 0",
               borderRadius: 6,
               border: "none",
-              background: loading || !trackingNumber.trim() ? "#ff440044" : "#ff4400",
-              color: "#fff",
+              background: loading || !trackingNumber.trim() ? "var(--accent-mid)" : "var(--accent)",
+              color: "var(--text)",
               cursor: loading || !trackingNumber.trim() ? "not-allowed" : "pointer",
-              fontFamily: "monospace",
+              fontFamily: "inherit",
               fontWeight: "bold",
               fontSize: 14,
               letterSpacing: 1,
               transition: "background 0.2s",
               minHeight: 44,
+              opacity: loading || !trackingNumber.trim() ? 0.5 : 1,
             }}
           >
             {loading ? "Synchronisation 17TRACK..." : "Ajouter"}
