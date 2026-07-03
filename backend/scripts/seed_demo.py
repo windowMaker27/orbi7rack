@@ -122,6 +122,7 @@ AIRPORTS = {
     "LAX": (33.9425, -118.4081,   "Los Angeles",               "US"),
     "ORD": (41.9742,  -87.9073,   "Chicago O'Hare",            "US"),
     "ATL": (33.6407,  -84.4277,   "Atlanta",                   "US"),
+    "DTW": (42.2124,  -83.3534,   "Detroit Metro",             "US"),
     "MIA": (25.7959,  -80.2870,   "Miami",                     "US"),
     "SFO": (37.6213, -122.3790,   "San Francisco",             "US"),
     "SEA": (47.4502, -122.3088,   "Seattle",                   "US"),
@@ -152,11 +153,11 @@ CARRIER_HUB = {
 }
 
 # Routes connues par numéro de vol exact : (origin_IATA, dest_IATA)
-# Couvre les vols les plus utilisés en démo
 FLIGHT_ROUTES = {
     # Delta
-    "DL95":  ("JFK", "CDG"), "DL96":  ("CDG", "JFK"),
-    "DL180": ("CDG", "JFK"), "DL400": ("JFK", "LHR"),
+    "DL95":  ("CDG", "DTW"), "DL96":  ("DTW", "CDG"),  # Paris ↔ Detroit
+    "DL180": ("CDG", "JFK"), "DL181": ("JFK", "CDG"),
+    "DL400": ("ATL", "LHR"), "DL401": ("LHR", "ATL"),
     # Air France
     "AF011": ("CDG", "JFK"), "AF012": ("JFK", "CDG"),
     "AF066": ("CDG", "LAX"), "AF068": ("LAX", "CDG"),
@@ -194,11 +195,10 @@ def guess_carrier(flight_number: str) -> str:
 
 def resolve_route(flight_number: str, origin_arg: str | None, dest_arg: str | None, prefix: str):
     """
-    Résout (origin_iata, dest_iata) selon la priorité :
+    Résout (origin_data, dest_data) selon la priorité :
       1. CLI args
       2. FLIGHT_ROUTES (numéro exact)
       3. CARRIER_HUB (origine seulement)
-    Retourne (origin_data | None, dest_data | None).
     """
     route = FLIGHT_ROUTES.get(flight_number)
     resolved_origin = origin_arg or (route[0] if route else None) or CARRIER_HUB.get(prefix)
@@ -240,7 +240,6 @@ def run(
     flight_number = flight_number.strip().upper()
     prefix = "".join(c for c in flight_number if c.isalpha()).upper()
 
-    # --- User ---
     if target_username:
         try:
             user = User.objects.get(username=target_username)
@@ -255,12 +254,10 @@ def run(
     desc     = description or f"Colis démo {flight_number}"
     car      = carrier or guess_carrier(flight_number)
 
-    # --- Résolution origine/destination ---
     origin_data, dest_data = resolve_route(flight_number, origin_iata, dest_iata, prefix)
     origin_country = origin_data[3] if origin_data else ""
     dest_country   = dest_data[3]   if dest_data   else ""
 
-    # --- Gestion de l'existant ---
     existing = Parcel.objects.filter(tracking_number=tracking).first()
     if existing:
         if force:
@@ -270,7 +267,6 @@ def run(
             print(f"[seed] '{tracking}' existe déjà (owner={existing.owner.username}). Utilisez --force pour recréer.")
             sys.exit(0)
 
-    # --- Création du colis ---
     parcel = Parcel.objects.create(
         tracking_number=tracking,
         carrier=car,
@@ -283,7 +279,6 @@ def run(
     )
     print(f"[seed] ✓ Colis '{tracking}' créé pour '{user.username}' (vol: {flight_number})")
 
-    # --- Events départ + arrivée estimée ---
     now = timezone.now()
 
     if origin_data:
@@ -318,7 +313,6 @@ def run(
     else:
         print(f"[seed]   ⚠ destination inconnue — passez --dest <IATA>")
 
-    # --- SimEngine ---
     if origin_data and dest_data:
         compute_parcel_simulation(parcel)
         seg_count = parcel.events.filter(simulated=True).count()
