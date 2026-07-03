@@ -2,19 +2,21 @@
 
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import type { Parcel } from "@/hooks/useParcels";
-import type { Theme } from "@/context/ThemeContext";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 interface AddParcelModalProps {
   onClose: () => void;
   onParcelAdded: (parcel: Parcel) => void;
-  theme?: Theme;
 }
 
 export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModalProps) {
   const { access } = useAuth();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrier, setCarrier] = useState("");
   const [description, setDescription] = useState("");
@@ -25,9 +27,9 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
   const inputStyle: React.CSSProperties = {
     padding: 12,
     borderRadius: 6,
-    border: "1px solid rgba(255,68,0,0.3)",
-    background: "rgba(0,0,0,0.4)",
-    color: "#fff",
+    border: isDark ? "1px solid rgba(255,68,0,0.3)" : "1px solid rgba(255,68,0,0.4)",
+    background: isDark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.9)",
+    color: isDark ? "#fff" : "#1a1a1a",
     fontFamily: "monospace",
     fontSize: 16,
     outline: "none",
@@ -75,31 +77,48 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
         className="add-modal-panel"
         onClick={e => e.stopPropagation()}
         style={{
-          background: "rgba(15,3,0,0.92)",
+          background: isDark ? "rgba(15,3,0,0.92)" : "rgba(255,252,250,0.97)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          border: "1px solid rgba(255,68,0,0.25)",
+          border: isDark
+            ? "1px solid rgba(255,68,0,0.25)"
+            : "1px solid rgba(255,68,0,0.35)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{
-            color: "#ff6600", fontFamily: "monospace",
-            fontSize: 13, letterSpacing: 3,
-            textTransform: "uppercase", margin: 0,
+            color: "#ff6600",
+            fontFamily: "monospace",
+            fontSize: 13,
+            letterSpacing: 3,
+            textTransform: "uppercase",
+            margin: 0,
           }}>
             Ajouter un colis
           </h2>
           <button onClick={onClose} style={{
-            background: "none", border: "none", color: "#ff440088",
-            cursor: "pointer", fontSize: 18, lineHeight: 1,
-            minHeight: 44, minWidth: 44,
-            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "none",
+            border: "none",
+            color: "#ff440088",
+            cursor: "pointer",
+            fontSize: 18,
+            lineHeight: 1,
+            minHeight: 44,
+            minWidth: 44,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}>✕</button>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ color: "#ff440099", fontFamily: "monospace", fontSize: 11, letterSpacing: 1 }}>
+            <label style={{
+              color: isDark ? "#ff440099" : "#cc3300cc",
+              fontFamily: "monospace",
+              fontSize: 11,
+              letterSpacing: 1,
+            }}>
               N° DE SUIVI *
             </label>
             <input
@@ -114,7 +133,12 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ color: "#ff440099", fontFamily: "monospace", fontSize: 11, letterSpacing: 1 }}>
+            <label style={{
+              color: isDark ? "#ff440099" : "#cc3300cc",
+              fontFamily: "monospace",
+              fontSize: 11,
+              letterSpacing: 1,
+            }}>
               TRANSPORTEUR (optionnel)
             </label>
             <input
@@ -127,7 +151,12 @@ export default function AddParcelModal({ onClose, onParcelAdded }: AddParcelModa
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ color: "#ff440099", fontFamily: "monospace", fontSize: 11, letterSpacing: 1 }}>
+            <label style={{
+              color: isDark ? "#ff440099" : "#cc3300cc",
+              fontFamily: "monospace",
+              fontSize: 11,
+              letterSpacing: 1,
+            }}>
               DESCRIPTION
             </label>
             <input
