@@ -20,17 +20,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const isDark = theme === "dark";
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
-  // Accents identiques à globals.css
-  const accent      = isDark ? "#d14d00"              : "#0066cc";
-  const accentBg    = isDark ? "rgba(255,68,0,0.12)"  : "rgba(0,102,204,0.1)";
-  const accentBorder= isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
-  const bg          = isDark ? "#000000"              : "#ffffff";
-  const text        = isDark ? "#ffffff"              : "#1a1a2e";
-  const inputBg     = isDark ? "#0d0000"              : "#f5f5ff";
-  const inputBorder = isDark ? "rgba(255,68,0,0.35)"  : "rgba(0,102,204,0.35)";
-  const switchBorder= isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
-  const switchTrack = isDark ? "rgba(255,68,0,0.08)"  : "rgba(0,102,204,0.07)";
-  const switchThumb = isDark ? "#ff6600"              : "#0066cc";
+  const accent       = isDark ? "#d14d00"              : "#0066cc";
+  const accentBorder = isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
+  const bg           = isDark ? "#000000"              : "#ffffff";
+  const text         = isDark ? "#ffffff"              : "#1a1a2e";
+  const inputBg      = isDark ? "#0d0000"              : "#f5f5ff";
+  const inputBorder  = isDark ? "rgba(255,68,0,0.35)"  : "rgba(0,102,204,0.35)";
+  const switchBorder = isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
+  const switchTrack  = isDark ? "rgba(255,68,0,0.08)"  : "rgba(0,102,204,0.07)";
+  const switchThumb  = isDark ? "#ff6600"              : "#0066cc";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +66,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     fontFamily: "monospace",
     touchAction: "manipulation",
     pointerEvents: "auto",
+    userSelect: "none",
+    WebkitUserSelect: "none",
   };
 
   const SunIcon = () => (
@@ -104,7 +104,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       touchAction: "manipulation",
     }}>
 
-      {/* Theme switch — identique TopBar */}
+      {/* Theme switch */}
       <button
         type="button"
         role="switch"
@@ -170,7 +170,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       {/* Formulaire */}
       <form
         onSubmit={handleSubmit}
-        action="javascript:void(0)"
         noValidate
         className="auth-form"
         style={{

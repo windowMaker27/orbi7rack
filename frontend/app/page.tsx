@@ -156,10 +156,13 @@ export default function Home() {
 
   return (
     <>
-      {/* AuthGate : overlay plein écran z-index 9999 tant que !access */}
-      <AuthGate>
-        {null}
-      </AuthGate>
+      {/*
+        AuthGate monté UNIQUEMENT quand !access.
+        Raison : le div fixed inset-0 z-9999 restait dans le DOM même
+        après login (retournait un fragment vide) et continuait à
+        intercepter les touch events sur mobile.
+      */}
+      {!access && <AuthGate>{null}</AuthGate>}
 
       {/*
         Globe monté UNIQUEMENT après auth.

@@ -49,6 +49,15 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
 
+/* ── AuthGate : force pointer-events sur tous les éléments interactifs
+   Override nécessaire car Tailwind v4 preflight peut interférer ── */
+.auth-form,
+.auth-form button,
+.auth-form input {
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+}
+
 /* ═══════════════════════════════════════════════════════════
    MOBILE-FIRST — styles de base = mobile
    @media (min-width: 768px) = desktop overrides
@@ -86,7 +95,6 @@ body {
   bottom: 0;
   top: auto;
   width: 100%;
-  /* --sidebar-h est injecté par React via style inline */
   height: var(--sidebar-h, 42vh);
   z-index: 100;
   border-top: 1px solid var(--border);
@@ -104,7 +112,7 @@ body {
     right: auto;
     bottom: 0;
     width: 260px;
-    height: 100% !important; /* ignore --sidebar-h sur desktop */
+    height: 100% !important;
     border-top: none;
     border-right: 1px solid var(--border);
     border-radius: 0;
