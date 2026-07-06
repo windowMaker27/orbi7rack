@@ -34,7 +34,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setError("");
     setLoading(true);
     try {
@@ -58,6 +57,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     width: "100%",
     minHeight: 44,
     boxSizing: "border-box",
+    pointerEvents: "auto",
   };
 
   const btnBase: React.CSSProperties = {
@@ -67,6 +67,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     borderRadius: 6,
     fontFamily: "monospace",
     touchAction: "manipulation",
+    pointerEvents: "auto",
   };
 
   const SunIcon = () => (
@@ -99,6 +100,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       background: bg,
       color: text,
       padding: "0 16px", gap: 24,
+      pointerEvents: "auto",
+      touchAction: "manipulation",
     }}>
 
       {/* Theme switch — identique TopBar */}
@@ -123,6 +126,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
+          pointerEvents: "auto",
+          touchAction: "manipulation",
+          zIndex: 10000,
         }}
       >
         <span style={{
@@ -155,7 +161,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         playsInline
         preload="auto"
         poster={`${assetBase}/login-poster.jpg`}
-        style={{ width: "min(640px, 90vw)", height: "auto", display: "block" }}
+        style={{ width: "min(640px, 90vw)", height: "auto", display: "block", pointerEvents: "none" }}
       >
         <source src={`${assetBase}/orbi7rack-video.mp4`} type="video/mp4" />
         <source src={`${assetBase}/orbi7rack-video.webm`} type="video/webm" />
@@ -170,6 +176,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         style={{
           background: isDark ? "rgba(20,8,0,0.95)" : "rgba(255,255,255,0.95)",
           border: `1px solid ${accentBorder}`,
+          pointerEvents: "auto",
+          touchAction: "manipulation",
+          position: "relative",
+          zIndex: 10000,
         }}
       >
         <img
@@ -182,7 +192,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             <button
               key={m}
               type="button"
-              onPointerUp={() => setMode(m)}
+              onClick={() => setMode(m)}
               style={{
                 ...btnBase, flex: 1, padding: "10px 0",
                 border: `1px solid ${accentBorder}`,
