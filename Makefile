@@ -3,9 +3,11 @@
 # ── Docker ────────────────────────────────────────────────
 up:
 	docker compose up -d
+	@echo "✅ Orbi7rack prêt sur http://localhost:3000"
 
 up-mobile:
 	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+	@echo "✅ Orbi7rack prêt sur http://{TAILSCALE_IP}:3000"
 
 up-mobile-prod:
 	docker compose -f docker-compose.yml -f docker-compose.mobile-prod.yml up -d
@@ -16,10 +18,11 @@ down:
 re:
 	docker compose down
 	docker compose up -d
-
+	@echo "✅ Orbi7rack prêt sur http://localhost:3000"
 re-mobile:
 	docker compose down
 	docker compose -f docker-compose.yml -f docker-compose.mobile.yml up -d
+	@echo "✅ Orbi7rack prêt sur http://{TAILSCALE_IP}:3000"
 
 re-mobile-prod:
 	docker compose down
