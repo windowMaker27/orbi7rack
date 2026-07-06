@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -21,7 +20,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
   const accent      = isDark ? "#d14d00"              : "#0066cc";
-  const accentBg    = isDark ? "rgba(255,68,0,0.12)"  : "rgba(0,102,204,0.1)";
   const accentBorder= isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
   const bg          = isDark ? "#000000"              : "#ffffff";
   const text        = isDark ? "#ffffff"              : "#1a1a2e";
@@ -66,6 +64,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     borderRadius: 6,
     fontFamily: "monospace",
     touchAction: "manipulation",
+    userSelect: "none",
+    WebkitUserSelect: "none",
   };
 
   const SunIcon = () => (
@@ -98,6 +98,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       background: bg,
       color: text,
       padding: "0 16px", gap: 24,
+      /* touch-action sur le container pour eliminer le 300ms delay Safari */
+      touchAction: "manipulation",
     }}>
 
       {/* Theme switch */}
@@ -110,7 +112,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         style={{
           position: "absolute", top: 16, right: 16,
           width: 44,
-          height: 44, /* 44px touch target — était 30, trop petit pour iOS */
+          height: 30,
           borderRadius: 999,
           border: `1.5px solid ${switchBorder}`,
           background: switchTrack,
@@ -124,6 +126,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           alignItems: "center",
           flexShrink: 0,
           touchAction: "manipulation",
+          userSelect: "none",
+          WebkitUserSelect: "none",
         }}
       >
         <span style={{
@@ -147,9 +151,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         </span>
       </button>
 
-      {/* Logo vidéo — pointer-events:none : iOS Safari AVKit interceptait
-          tous les touch events dans la zone vidéo avant React,
-          bloquant les boutons Connexion/Inscription et le toggle */}
+      {/* Logo video — pointer-events:none : iOS Safari AVKit capturait les touch events */}
       <video
         key={assetBase}
         autoPlay
@@ -178,6 +180,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         style={{
           background: isDark ? "rgba(20,8,0,0.95)" : "rgba(255,255,255,0.95)",
           border: `1px solid ${accentBorder}`,
+          /* touch-action:manipulation elimine le 300ms double-tap delay Safari
+             sur tous les elements enfants du formulaire */
+          touchAction: "manipulation",
         }}
       >
         <img
@@ -185,12 +190,17 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           alt="Orbi7rack"
           style={{ width: 425, height: 64, marginBottom: 10 }}
         />
+
+        {/* Boutons Connexion / Inscription
+            onClick au lieu de onPointerUp : sur vrai touchscreen iOS Safari,
+            pointerup ne fire pas si le doigt bouge de 1px (scroll intent).
+            onClick fire apres touchend meme avec micro-mouvement. */}
         <div style={{ display: "flex", gap: 8 }}>
           {(["login", "register"] as const).map(m => (
             <button
               key={m}
               type="button"
-              onPointerUp={() => setMode(m)}
+              onClick={() => setMode(m)}
               style={{
                 ...btnBase, flex: 1, padding: "10px 0",
                 border: `1px solid ${accentBorder}`,
