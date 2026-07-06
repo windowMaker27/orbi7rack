@@ -20,7 +20,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const isDark = theme === "dark";
   const assetBase = isDark ? "/assets/dark" : "/assets/light";
 
-  // Accents identiques à globals.css
   const accent      = isDark ? "#d14d00"              : "#0066cc";
   const accentBg    = isDark ? "rgba(255,68,0,0.12)"  : "rgba(0,102,204,0.1)";
   const accentBorder= isDark ? "rgba(255,102,0,0.55)" : "rgba(0,102,204,0.45)";
@@ -101,7 +100,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       padding: "0 16px", gap: 24,
     }}>
 
-      {/* Theme switch — identique TopBar */}
+      {/* Theme switch */}
       <button
         type="button"
         role="switch"
@@ -110,7 +109,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         onClick={toggleTheme}
         style={{
           position: "absolute", top: 16, right: 16,
-          width: 44, height: 30,
+          width: 44,
+          height: 44, /* 44px touch target — était 30, trop petit pour iOS */
           borderRadius: 999,
           border: `1.5px solid ${switchBorder}`,
           background: switchTrack,
@@ -123,6 +123,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
+          touchAction: "manipulation",
         }}
       >
         <span style={{
@@ -146,7 +147,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         </span>
       </button>
 
-      {/* Logo vidéo */}
+      {/* Logo vidéo — pointer-events:none : iOS Safari AVKit interceptait
+          tous les touch events dans la zone vidéo avant React,
+          bloquant les boutons Connexion/Inscription et le toggle */}
       <video
         key={assetBase}
         autoPlay
@@ -155,7 +158,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         playsInline
         preload="auto"
         poster={`${assetBase}/login-poster.jpg`}
-        style={{ width: "min(640px, 90vw)", height: "auto", display: "block" }}
+        style={{
+          width: "min(640px, 90vw)",
+          height: "auto",
+          display: "block",
+          pointerEvents: "none",
+        }}
       >
         <source src={`${assetBase}/orbi7rack-video.mp4`} type="video/mp4" />
         <source src={`${assetBase}/orbi7rack-video.webm`} type="video/webm" />
